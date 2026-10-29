@@ -15,7 +15,7 @@ fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, Vec<u8>)>) {
             walk(&p, root, out);
         } else if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
             if ext == "xiz" || ext == "xmz" {
-                let rel = p.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                let _ = root; let rel = p.to_string_lossy().replace('\\', "/");
                 out.push((rel, std::fs::read(&p).unwrap()));
             }
         }
