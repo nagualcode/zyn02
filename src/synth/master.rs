@@ -74,6 +74,10 @@ impl Patch {
 
     pub fn to_xml(&self) -> XmlDoc {
         let mut doc = XmlDoc::new();
+        // Pre-3.0.7 files use the old pan law; keep it on save.
+        if !self.const_power || self.parts.iter().any(|p| !p.const_power) {
+            doc.set_version(3, 0, 6);
+        }
         let m = doc.root.child("MASTER");
         m.add_parreal("volume", self.volume);
         m.add_par("key_shift", self.keyshift as i32);
@@ -162,6 +166,9 @@ impl Patch {
     /// Instrument file for one part.
     pub fn xiz_of(&self, npart: usize) -> XmlDoc {
         let mut doc = XmlDoc::new();
+        if !self.parts[npart].const_power {
+            doc.set_version(3, 0, 6);
+        }
         self.parts[npart].add_instrument_xml(doc.root.child("INSTRUMENT"));
         doc
     }
@@ -174,6 +181,7 @@ impl Patch {
         } else {
             let mut p = Self::new(oscilsize);
             p.load_xiz(&doc, 0)?;
+            p.const_power = doc.version >= Version(3, 0, 7);
             Ok(p)
         }
     }

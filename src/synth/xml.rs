@@ -229,6 +229,18 @@ impl XmlDoc {
         Self { root, version: Version(3, 0, 7) }
     }
 
+    pub fn set_version(&mut self, a: i32, b: i32, c: i32) {
+        self.version = Version(a, b, c);
+        for (k, v) in self.root.attrs.iter_mut() {
+            match k.as_str() {
+                "version-major" => *v = a.to_string(),
+                "version-minor" => *v = b.to_string(),
+                "version-revision" => *v = c.to_string(),
+                _ => {}
+            }
+        }
+    }
+
     /// Parse plain or gzipped bytes.
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         let text = if bytes.starts_with(&[0x1f, 0x8b]) {

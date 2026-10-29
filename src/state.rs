@@ -4,8 +4,8 @@
 //! The authoritative sound is one `Arc<Patch>`. The editor edits copies
 //! (`Arc::make_mut` clones only the touched part/kit item) and swaps
 //! them in; the audio thread picks the new `Arc` up at the next block.
-//! Heavy work — parsing files, building PADsynth wavetables, writing the
-//! XML that the host saves — runs on a worker thread.
+//! Heavy work - parsing files, building PADsynth wavetables, writing the
+//! XML that the host saves - runs on a worker thread.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -211,13 +211,13 @@ impl Shared {
     pub fn load_bytes(self: &Arc<Self>, bytes: Vec<u8>, publish: bool) {
         *self.last_blob.lock().unwrap() = Arc::new(bytes.clone());
         self.busy.fetch_add(1, Ordering::AcqRel);
-        self.set_status("Loading…");
+        self.set_status("Loading...");
         self.send(Job::LoadBytes { bytes: Arc::new(bytes), publish });
     }
 
     pub fn load_instrument(self: &Arc<Self>, bytes: Vec<u8>, part: usize, name: String) {
         self.busy.fetch_add(1, Ordering::AcqRel);
-        self.set_status(&format!("Loading {name}…"));
+        self.set_status(&format!("Loading {name}..."));
         self.send(Job::LoadInstrument { bytes: Arc::new(bytes), part, name });
     }
 

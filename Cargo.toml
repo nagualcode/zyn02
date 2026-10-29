@@ -43,6 +43,7 @@ realfft = "3"
 quick-xml = "0.37"
 flate2 = "1"
 parking_lot = "0.12"
+rfd = "0.15"
 
 [dev-dependencies]
 truce-test = { version = "6.3" }
