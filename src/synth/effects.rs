@@ -6,7 +6,7 @@
 //! load unchanged.
 
 use super::envelope::Loc;
-use super::filter::{AnalogFilter, Filter, FilterParams, basefreq_from_old, baseq_from_old};
+use super::filter::{AnalogFilter, Filter, FilterParams, ValueSmoothing, basefreq_from_old, baseq_from_old};
 use super::util::*;
 use super::waveshape::wave_shape_smps;
 use super::xml::{Version, XmlNode};
@@ -2127,6 +2127,775 @@ impl DynFilter {
 }
 
 // ---------------------------------------------------------------------------
+// Reverse (`Effects/Reverse.cpp` + `DSP/Reverter.cpp`, Zyn 3.0.7)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SyncMode {
+    NoteOn,
+    NoteOnOff,
+    Auto,
+    Host,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RevState {
+    Recording,
+    Playing,
+    Idle,
+}
+
+#[derive(Clone, Debug)]
+struct Reverter {
+    sync_mode: SyncMode,
+    state: RevState,
+    input: Vec<f32>,
+    gain: f32,
+    delay: f32,
+    phase: f32,
+    crossfade: f32,
+    reverse_index: i32,
+    fading_samples: i32,
+    fade_counter: i32,
+    mean_abs_value: f32,
+    mem_size: u32,
+    sr: i32,
+    bs: usize,
+    max_delay_samples: f32,
+    pos_start: u32,
+    phase_offset: f32,
+    recorded_samples: i32,
+    sync_pos: f32,
+    pos_reader: f32,
+    delta_crossfade: f32,
+    do_sync: bool,
+    pos_writer: u32,
+}
+
+impl Reverter {
+    fn new(delay: f32, sr: f32, bs: usize) -> Self {
+        let mut r = Self {
+            sync_mode: SyncMode::NoteOn,
+            state: RevState::Playing,
+            input: Vec::new(),
+            gain: 1.0,
+            delay: 0.0,
+            phase: 0.0,
+            crossfade: 0.16,
+            reverse_index: 0,
+            fading_samples: 0,
+            fade_counter: 0,
+            mean_abs_value: 999.9,
+            mem_size: 0,
+            sr: sr as i32,
+            bs,
+            max_delay_samples: sr * MAX_REV_DELAY_SECONDS,
+            pos_start: 0,
+            phase_offset: 0.0,
+            recorded_samples: 0,
+            sync_pos: 0.0,
+            pos_reader: 0.0,
+            delta_crossfade: 0.0,
+            do_sync: false,
+            pos_writer: 0,
+        };
+        r.setdelay(delay);
+        r.pos_writer = 0;
+        r.pos_start = 0;
+        r.reverse_index = 0;
+        r.state = RevState::Playing;
+        r
+    }
+    fn lerp(&self, pos: f32) -> f32 {
+        let hi = pos as i32;
+        let lo = pos - hi as f32;
+        let hi = (hi.max(0) as usize).min(self.input.len().saturating_sub(2));
+        self.input[hi] + lo * (self.input[hi + 1] - self.input[hi])
+    }
+    fn switch_buffers(&mut self) {
+        self.reverse_index = 0;
+        self.phase_offset = self.phase * self.delay;
+        self.pos_start = self.pos_writer;
+        let ms = self.mem_size as f32;
+        let next = ((self.pos_start + self.mem_size) as f32 - (self.reverse_index as f32 + self.phase_offset)) % ms;
+        self.delta_crossfade = self.pos_reader - 1.0 - next;
+        self.fade_counter = 0;
+    }
+    fn filterout(&mut self, smp: &mut [f32], host_playing: bool) {
+        // write
+        let n = self.bs;
+        let ms = self.mem_size as usize;
+        let pw = self.pos_writer as usize;
+        let space = ms - pw;
+        if n <= space {
+            self.input[pw..pw + n].copy_from_slice(&smp[..n]);
+        } else {
+            self.input[pw..ms].copy_from_slice(&smp[..space]);
+            self.input[..n - space].copy_from_slice(&smp[space..n]);
+        }
+        self.pos_writer = ((pw + n) % ms) as u32;
+        let a: f32 = smp[..n].iter().map(|v| v.abs()).sum();
+        self.mean_abs_value = a / n as f32;
+        // process
+        for i in 0..n {
+            self.reverse_index += 1;
+            self.check_sync(host_playing);
+            self.pos_reader = ((self.pos_start + self.mem_size) as f32 - (self.reverse_index as f32 + self.phase_offset)) % self.mem_size as f32;
+            let msf = self.mem_size as f32;
+            if self.fade_counter < self.fading_samples {
+                let fi = self.fade_counter as f32 / self.fading_samples as f32;
+                let fo = 1.0 - fi;
+                self.fade_counter += 1;
+                smp[i] = if self.state == RevState::Idle {
+                    fo * self.lerp((self.pos_reader + msf + self.delta_crossfade) % msf)
+                } else if matches!(self.sync_mode, SyncMode::NoteOn | SyncMode::NoteOnOff) {
+                    fi * self.lerp(self.pos_reader)
+                } else {
+                    fi * self.lerp(self.pos_reader) + fo * self.lerp((self.pos_reader + msf + self.delta_crossfade) % msf)
+                };
+            } else {
+                smp[i] = if self.state == RevState::Playing { self.lerp(self.pos_reader) } else { 0.0 };
+            }
+            smp[i] *= self.gain;
+        }
+    }
+    fn check_sync(&mut self, host_playing: bool) {
+        let ds = self.delay * self.sr as f32;
+        match self.sync_mode {
+            SyncMode::Auto => {
+                if self.reverse_index as f32 >= ds {
+                    self.switch_buffers();
+                }
+            }
+            SyncMode::Host => {
+                if (self.do_sync && self.reverse_index as f32 >= self.sync_pos) || self.reverse_index as f32 >= self.max_delay_samples {
+                    self.switch_buffers();
+                    self.do_sync = false;
+                }
+                if !host_playing {
+                    self.state = RevState::Idle;
+                } else if self.state != RevState::Playing {
+                    self.state = RevState::Playing;
+                    self.reset();
+                }
+            }
+            SyncMode::NoteOn => {
+                if self.reverse_index as f32 >= ds && self.state != RevState::Idle {
+                    self.handle_state_change();
+                }
+            }
+            SyncMode::NoteOnOff => {
+                if (self.reverse_index >= self.recorded_samples && self.state == RevState::Playing)
+                    || (self.reverse_index as f32 >= self.max_delay_samples && self.state == RevState::Playing)
+                    || (self.mean_abs_value < 0.001 && self.state == RevState::Recording)
+                {
+                    self.handle_state_change();
+                }
+            }
+        }
+    }
+    fn handle_state_change(&mut self) {
+        if self.state == RevState::Recording {
+            self.recorded_samples = self.reverse_index;
+            self.state = RevState::Playing;
+        } else if self.state == RevState::Playing {
+            self.state = RevState::Idle;
+        }
+        self.switch_buffers();
+    }
+    fn sync(&mut self, pos: f32) {
+        if self.state == RevState::Idle {
+            self.reset();
+            self.state = RevState::Recording;
+            self.reverse_index = 0;
+        } else {
+            self.sync_pos = pos + self.reverse_index as f32;
+            self.do_sync = true;
+        }
+    }
+    fn setdelay(&mut self, v: f32) {
+        if v == self.delay {
+            return;
+        }
+        self.delay = v;
+        let c = self.crossfade;
+        self.setcrossfade(c);
+        self.update_memsize();
+    }
+    fn update_memsize(&mut self) {
+        let n = if matches!(self.sync_mode, SyncMode::NoteOn | SyncMode::Auto) {
+            (3.0 * self.delay * self.sr as f32).ceil() as i64 + self.fading_samples as i64 + 2 + self.bs as i64
+        } else {
+            (3.0 * self.max_delay_samples).ceil() as i64 + self.fading_samples as i64 + 2 + self.bs as i64
+        } as u32;
+        if n == self.mem_size {
+            return;
+        }
+        self.mem_size = n;
+        self.input = vec![0.0; n as usize + 2];
+        self.reset();
+    }
+    fn setcrossfade(&mut self, v: f32) {
+        self.crossfade = v;
+        let ds = self.delay * self.sr as f32;
+        self.fading_samples = (v * self.sr as f32) as i32;
+        if ds < 1.25 * self.fading_samples as f32 {
+            self.fading_samples = (ds * 0.8) as i32;
+        }
+    }
+    fn setsync_mode(&mut self, m: SyncMode) {
+        if m != self.sync_mode {
+            self.sync_mode = m;
+            self.state = if matches!(m, SyncMode::NoteOn | SyncMode::NoteOnOff) { RevState::Idle } else { RevState::Playing };
+            self.update_memsize();
+        }
+    }
+    fn reset(&mut self) {
+        self.input.fill(0.0);
+        self.pos_writer = 0;
+        self.reverse_index = 0;
+        self.sync_pos = self.mem_size as f32;
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Reverse {
+    b: Base,
+    pvolume: u8,
+    pdelay: u8,
+    pphase: u8,
+    pcrossfade: u8,
+    psync: u8,
+    pstereo: u8,
+    l: Reverter,
+    r: Reverter,
+    /// Host transport, set by the manager before each block.
+    playing: bool,
+    playing_hist: bool,
+    beat: f64,
+    tempo: f32,
+    speedfactor: f32,
+}
+
+impl Reverse {
+    const PRESETS: [[u8; 7]; 3] = [[64, 64, 25, 0, 64, 32, 0], [64, 64, 25, 0, 64, 16, 1], [64, 64, 25, 0, 64, 50, 2]];
+    fn new(b: Base) -> Self {
+        let pvolume = if b.insertion { 64 } else { 32 };
+        let d = 26.0 / 128.0 * MAX_REV_DELAY_SECONDS;
+        let (sr, bs) = (b.sr, b.bs);
+        let mut e = Self {
+            b,
+            pvolume,
+            pdelay: 25,
+            pphase: 64,
+            pcrossfade: 32,
+            psync: 0,
+            pstereo: 0,
+            l: Reverter::new(d, sr, bs),
+            r: Reverter::new(d, sr, bs),
+            playing: false,
+            playing_hist: false,
+            beat: 0.0,
+            tempo: 120.0,
+            speedfactor: 0.0,
+        };
+        e.b.setpanning(64);
+        e.setvolume(pvolume);
+        e
+    }
+    fn presetpar(&self, np: u8, n: usize) -> u8 {
+        if (np as usize) < 3 && n < 7 {
+            let v = Self::PRESETS[np as usize][n];
+            if n == 0 && !self.b.insertion {
+                return v / 2;
+            }
+            return v;
+        }
+        0
+    }
+    fn cleanup(&mut self) {
+        self.l.reset();
+        self.r.reset();
+    }
+    fn setvolume(&mut self, v: u8) {
+        self.pvolume = v;
+        if !self.b.insertion {
+            self.b.outvolume = if v == 0 { 0.0 } else { 0.01f32.powf(1.0 - v as f32 / 127.0) * 4.0 };
+            self.b.volume = 1.0;
+        } else {
+            self.b.volume = v as f32 / 127.0;
+            self.b.outvolume = self.b.volume;
+        }
+        if v == 0 {
+            self.cleanup();
+        }
+    }
+    /// Note-on trigger (`Reverse::update`, called through `Sync`).
+    fn note_on(&mut self) {
+        if self.psync == 0 || self.psync == 1 {
+            self.l.sync(0.0);
+            if self.pstereo != 0 {
+                self.r.sync(0.0);
+            }
+        }
+    }
+    fn out(&mut self, l: &[f32], r: &[f32], ol: &mut [f32], or: &mut [f32]) {
+        let bs = self.b.bs;
+        if self.pstereo != 0 {
+            for i in 0..bs {
+                ol[i] = l[i] * self.b.pangain_l;
+                or[i] = r[i] * self.b.pangain_r;
+            }
+        } else {
+            for i in 0..bs {
+                ol[i] = l[i] * self.b.pangain_l + r[i] * self.b.pangain_r;
+            }
+        }
+        if self.speedfactor > 0.0 && self.psync == 3 {
+            if self.playing != self.playing_hist {
+                self.l.sync(0.0);
+                if self.pstereo != 0 {
+                    self.r.sync(0.0);
+                }
+                self.playing_hist = self.playing;
+            }
+            // Same test as Zyn's tick arithmetic, in beats.
+            let block_beats = bs as f64 / self.b.sr as f64 * self.tempo as f64 / 60.0;
+            let end = self.beat + block_beats;
+            let per = 1.0 / self.speedfactor as f64;
+            let since = end.rem_euclid(per);
+            if since < block_beats {
+                let pos = ((block_beats - since) / block_beats * bs as f64) as f32;
+                self.l.sync(pos);
+                if self.pstereo != 0 {
+                    self.r.sync(pos);
+                }
+            }
+        }
+        let playing = self.playing;
+        self.l.filterout(ol, playing);
+        if self.pstereo != 0 {
+            self.r.filterout(or, playing);
+        } else {
+            or[..bs].copy_from_slice(&ol[..bs]);
+        }
+    }
+    fn changepar(&mut self, n: i32, v: u8) {
+        match n {
+            0 => self.setvolume(v),
+            1 => self.b.setpanning(v),
+            2 => {
+                self.pdelay = v.min(127);
+                let d = (self.pdelay as f32 + 1.0) / 128.0 * MAX_REV_DELAY_SECONDS;
+                self.l.setdelay(d);
+                self.r.setdelay(d);
+            }
+            3 => self.pstereo = v.min(1),
+            4 => {
+                self.pphase = v;
+                self.l.phase = v as f32 / 127.0;
+                self.r.phase = v as f32 / 127.0;
+            }
+            5 => {
+                self.pcrossfade = v;
+                let c = (v as f32 + 1.0) / 100.0;
+                self.l.setcrossfade(c);
+                self.r.setcrossfade(c);
+            }
+            6 => {
+                self.psync = v;
+                let m = match v {
+                    0 => SyncMode::NoteOn,
+                    1 => SyncMode::NoteOnOff,
+                    2 => SyncMode::Auto,
+                    _ => SyncMode::Host,
+                };
+                self.l.setsync_mode(m);
+                self.r.setsync_mode(m);
+            }
+            _ => {}
+        }
+    }
+    fn getpar(&self, n: i32) -> u8 {
+        match n {
+            0 => self.pvolume,
+            1 => self.b.ppanning,
+            2 => self.pdelay,
+            3 => self.pstereo,
+            4 => self.pphase,
+            5 => self.pcrossfade,
+            6 => self.psync,
+            _ => 0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sympathetic (`Effects/Sympathetic.cpp` + `Effects/CombFilterBank.cpp`)
+// ---------------------------------------------------------------------------
+
+const NUM_SYMPATHETIC_STRINGS: usize = 228;
+const GAINBWD_OFFSET: f32 = 0.873;
+const GAINBWD_FACTOR: f32 = 0.001;
+const NUM_SINGLE_STRINGS: u32 = 12;
+const NUM_TRIPLE_STRINGS: u32 = 48;
+const GUITAR_FREQS: [f32; 6] = [82.4, 110.0, 146.8, 196.0, 246.9, 329.6];
+
+#[derive(Clone, Debug)]
+struct CombFilterBank {
+    delays: Vec<f32>,
+    inputgain: f32,
+    outgain: f32,
+    gainbwd: f32,
+    strings: Vec<Vec<f32>>,
+    base_freq: f32,
+    nr: usize,
+    pos_writer: usize,
+    gain_smoothing: ValueSmoothing,
+    mem_size: usize,
+    sr: f32,
+    bs: usize,
+}
+
+impl CombFilterBank {
+    fn new(sr: f32, bs: usize, initgain: f32) -> Self {
+        let mut g = ValueSmoothing::default();
+        g.cutoff(1.0);
+        g.sample_rate((sr as i32 / 16) as f32);
+        g.thresh(0.02);
+        g.reset(initgain);
+        Self {
+            delays: vec![0.0; NUM_SYMPATHETIC_STRINGS],
+            inputgain: 1.0,
+            outgain: 1.0,
+            gainbwd: initgain,
+            strings: Vec::new(),
+            base_freq: 110.0,
+            nr: 0,
+            pos_writer: 0,
+            gain_smoothing: g,
+            mem_size: 0,
+            sr,
+            bs,
+        }
+    }
+    fn set_strings(&mut self, n: usize, bf: f32) {
+        let n = n.min(NUM_SYMPATHETIC_STRINGS);
+        if n == self.nr && bf == self.base_freq {
+            return;
+        }
+        let ms = (((self.sr / bf * 1.03 + self.bs as f32 + 2.0) / 16.0).ceil() as usize) * 16;
+        if ms == self.mem_size {
+            if n > self.nr {
+                for _ in self.nr..n {
+                    self.strings.push(vec![0.0; ms]);
+                }
+            } else {
+                self.strings.truncate(n);
+            }
+        } else {
+            self.strings = (0..n).map(|_| vec![0.0; ms]).collect();
+            self.mem_size = ms;
+            self.base_freq = bf;
+            self.pos_writer = 0;
+        }
+        self.nr = n;
+    }
+    fn filterout(&mut self, smp: &mut [f32]) {
+        if self.nr == 0 {
+            return;
+        }
+        let gbs = self.bs / 16;
+        let mut gb = [0.0f32; super::filter::MAX_BUF / 16 + 1];
+        let target = self.gainbwd;
+        if !self.gain_smoothing.apply(&mut gb[..gbs], target) {
+            gb[..gbs].fill(target);
+        }
+        let ms = self.mem_size;
+        for i in 0..self.bs {
+            let x = smp[i] * self.inputgain;
+            for j in 0..self.nr {
+                let d = self.delays[j];
+                if d == 0.0 {
+                    continue;
+                }
+                let pr = ((self.pos_writer + ms) as f32 - d) % ms as f32;
+                let s = &self.strings[j];
+                let hi = pr as usize;
+                let lo = pr - hi as f32;
+                let v = s[hi] + lo * (s[(hi + 1) % ms] - s[hi]);
+                self.strings[j][self.pos_writer] = x + tanh_x(v * gb[(i / 16).min(gbs.max(1) - 1)]);
+            }
+            let mut out = 0.0;
+            let mut count = 0u32;
+            for j in 0..self.nr {
+                if self.delays[j] != 0.0 {
+                    out += self.strings[j][self.pos_writer];
+                    count += 1;
+                }
+            }
+            smp[i] = out * (self.outgain / count as f32);
+            self.pos_writer = (self.pos_writer + 1) % ms;
+        }
+    }
+}
+
+#[inline]
+fn tanh_x(x: f32) -> f32 {
+    let x2 = x * x;
+    x * (105.0 + 10.0 * x2) / (105.0 + (45.0 + x2) * x2)
+}
+
+#[derive(Clone, Debug)]
+struct Sympathetic {
+    b: Base,
+    pvolume: u8,
+    pdrive: u8,
+    plevel: u8,
+    pnegate: u8,
+    plpf: u8,
+    phpf: u8,
+    pq: u8,
+    punison_size: u8,
+    punison_spread: u8,
+    pstrings: u8,
+    pbasenote: u8,
+    ppreset: u8,
+    base_freq: f32,
+    lpfl: AnalogFilter,
+    lpfr: AnalogFilter,
+    hpfl: AnalogFilter,
+    hpfr: AnalogFilter,
+    bank: CombFilterBank,
+}
+
+impl Sympathetic {
+    const PRESETS: [[u8; 12]; 5] = [
+        [127, 64, 125, 5, 80, 10, 0, 127, 0, 3, 12, 57],
+        [100, 64, 125, 5, 80, 10, 0, 127, 0, 3, 12, 57],
+        [80, 64, 125, 5, 90, 5, 0, 127, 0, 1, 60, 33],
+        [100, 64, 110, 20, 65, 0, 0, 127, 0, 1, 6, 52],
+        [90, 64, 110, 20, 77, 10, 0, 127, 0, 2, 6, 52],
+    ];
+    fn new(b: Base) -> Self {
+        let (sr, bs) = (b.sr, b.bs);
+        Self {
+            b,
+            pvolume: 127,
+            pdrive: 65,
+            plevel: 65,
+            pnegate: 0,
+            plpf: 127,
+            phpf: 0,
+            pq: 65,
+            punison_size: 1,
+            punison_spread: 30,
+            pstrings: 12,
+            pbasenote: 57,
+            ppreset: 0,
+            base_freq: 220.0,
+            lpfl: AnalogFilter::new(2, 22000.0, 1.0, 0, sr, bs),
+            lpfr: AnalogFilter::new(2, 22000.0, 1.0, 0, sr, bs),
+            hpfl: AnalogFilter::new(3, 20.0, 1.0, 0, sr, bs),
+            hpfr: AnalogFilter::new(3, 20.0, 1.0, 0, sr, bs),
+            bank: CombFilterBank::new(sr, bs, 0.938),
+        }
+    }
+    fn presetpar(&self, np: u8, n: usize) -> u8 {
+        if (np as usize) < 5 && n < 13 {
+            let v = if n < 12 { Self::PRESETS[np as usize][n] } else { 0 };
+            if n == 0 && !self.b.insertion {
+                return ((2 * v as u32) / 3) as u8;
+            }
+            return v;
+        }
+        0
+    }
+    fn cleanup(&mut self) {
+        self.lpfl.cleanup();
+        self.hpfl.cleanup();
+        self.lpfr.cleanup();
+        self.hpfr.cleanup();
+    }
+    fn spreads(&self) -> (f32, f32) {
+        let semicent = (self.punison_spread as f32 / 63.5).powi(2) * 25.0;
+        let up = 2f32.powf(semicent * 0.5 / 1200.0);
+        (up, 1.0 / up)
+    }
+    fn calc_freqs(&mut self) {
+        let sr = self.b.sr;
+        let us = self.punison_size as usize;
+        let (up, down) = self.spreads();
+        let d = &mut self.bank.delays;
+        match self.ppreset {
+            0 => {
+                let mut i = 0;
+                while i < us * self.pstrings as usize {
+                    let cf = 2f32.powf(i as f32 / 36.0) * self.base_freq;
+                    d[i] = sr / cf;
+                    if us > 1 {
+                        d[i + 1] = sr / (cf * up);
+                    }
+                    if us > 2 {
+                        d[i + 2] = sr / (cf * down);
+                    }
+                    i += us;
+                }
+                self.bank.set_strings(self.pstrings as usize * us, self.base_freq);
+            }
+            1 | 2 => {
+                let mut i = 0u32;
+                while (i as usize) < us * self.pstrings as usize {
+                    let cf = 2f32.powf(i as f32 / 36.0) * self.base_freq;
+                    let choir = if i > NUM_SINGLE_STRINGS {
+                        if i > (self.pstrings as u32).wrapping_sub(NUM_TRIPLE_STRINGS) { 3 } else { 2 }
+                    } else {
+                        1
+                    };
+                    let k = i as usize;
+                    d[k] = sr / cf;
+                    d[k + 1] = if choir > 1 { sr / (cf * up) } else { 0.0 };
+                    d[k + 2] = if choir > 2 { sr / (cf * down) } else { 0.0 };
+                    i += us as u32;
+                }
+                self.bank.set_strings(self.pstrings as usize * us, self.base_freq);
+            }
+            3 | 4 => {
+                let mut i = 0;
+                while i < 6 * us {
+                    d[i] = sr / GUITAR_FREQS[i / us];
+                    if us > 1 {
+                        d[i + 1] = sr / (GUITAR_FREQS[i / us] * up);
+                    }
+                    i += us;
+                }
+                self.bank.set_strings(self.pstrings as usize * us, GUITAR_FREQS[0]);
+            }
+            _ => {}
+        }
+    }
+    fn out(&mut self, l: &[f32], r: &[f32], ol: &mut [f32], or: &mut [f32]) {
+        let bs = self.b.bs;
+        let mut iv = 2f32.powf((self.pdrive as f32 - 65.0) / 128.0) / 2.0;
+        if self.pnegate != 0 {
+            iv = -iv;
+        }
+        for i in 0..bs {
+            ol[i] = (l[i] * self.b.pangain_l + r[i] * self.b.pangain_r) * iv;
+        }
+        self.bank.filterout(&mut ol[..bs]);
+        if self.plpf != 127 {
+            self.lpfl.filterout(&mut ol[..bs]);
+        }
+        if self.phpf != 0 {
+            self.hpfl.filterout(&mut ol[..bs]);
+        }
+        or[..bs].copy_from_slice(&ol[..bs]);
+        let level = db2rap(60.0 * self.plevel as f32 / 127.0 - 40.0);
+        let c = self.b.lrcross;
+        for i in 0..bs {
+            let (lo, ro) = (ol[i], or[i]);
+            ol[i] = (lo * (1.0 - c) + ro * c) * 2.0 * level;
+            or[i] = (ro * (1.0 - c) + lo * c) * 2.0 * level;
+        }
+    }
+    fn changepar(&mut self, n: i32, v: u8) {
+        match n {
+            0 => {
+                self.pvolume = v;
+                if !self.b.insertion {
+                    self.b.outvolume = 0.01f32.powf(1.0 - v as f32 / 127.0) * 4.0;
+                    self.b.volume = 1.0;
+                } else {
+                    self.b.volume = v as f32 / 127.0;
+                    self.b.outvolume = self.b.volume;
+                }
+                if v == 0 {
+                    self.cleanup();
+                }
+            }
+            1 => self.b.setpanning(v),
+            2 => {
+                self.pq = v;
+                self.bank.gainbwd = GAINBWD_OFFSET + v as f32 * GAINBWD_FACTOR;
+            }
+            3 => {
+                self.pdrive = v;
+                self.bank.inputgain = v as f32 / 65.0;
+            }
+            4 => {
+                self.plevel = v;
+                self.bank.outgain = v as f32 / 65.0;
+            }
+            5 => {
+                if self.punison_spread != v {
+                    self.punison_spread = v;
+                    self.calc_freqs();
+                }
+            }
+            6 => self.pnegate = v.min(1),
+            7 => {
+                self.plpf = v;
+                let fr = ((v as f32 / 127.0).sqrt() * 25000f32.ln()).exp() + 40.0;
+                self.lpfl.setfreq(fr);
+                self.lpfr.setfreq(fr);
+            }
+            8 => {
+                self.phpf = v;
+                let fr = ((v as f32 / 127.0).sqrt() * 25000f32.ln()).exp() + 20.0;
+                self.hpfl.setfreq(fr);
+                self.hpfr.setfreq(fr);
+            }
+            9 => {
+                let lim = v.clamp(1, 3);
+                if self.punison_size != lim {
+                    self.punison_size = lim;
+                    if lim > 2 {
+                        self.ppreset = 0;
+                    }
+                    self.calc_freqs();
+                }
+            }
+            10 => {
+                let lim = v.min(76);
+                if self.pstrings != lim {
+                    self.pstrings = lim;
+                    if lim > 6 {
+                        self.ppreset = 0;
+                    }
+                    self.calc_freqs();
+                }
+            }
+            11 => {
+                if self.pbasenote != v {
+                    self.pbasenote = v;
+                    self.base_freq = 2f32.powf((v as f32 - 69.0) / 12.0) * 440.0;
+                    self.calc_freqs();
+                }
+            }
+            _ => {}
+        }
+    }
+    fn getpar(&self, n: i32) -> u8 {
+        match n {
+            0 => self.pvolume,
+            1 => self.b.ppanning,
+            2 => self.pq,
+            3 => self.pdrive,
+            4 => self.plevel,
+            5 => self.punison_spread,
+            6 => self.pnegate,
+            7 => self.plpf,
+            8 => self.phpf,
+            9 => self.punison_size,
+            10 => self.pstrings,
+            11 => self.pbasenote,
+            _ => 0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Effect (polymorphic)
 // ---------------------------------------------------------------------------
 
@@ -2140,6 +2909,8 @@ enum Effect {
     Distortion(Box<Distortion>),
     Eq(Box<Eq>),
     DynFilter(Box<DynFilter>),
+    Sympathetic(Box<Sympathetic>),
+    Reverse(Box<Reverse>),
 }
 
 macro_rules! each {
@@ -2153,6 +2924,8 @@ macro_rules! each {
             Effect::Distortion($e) => $body,
             Effect::Eq($e) => $body,
             Effect::DynFilter($e) => $body,
+            Effect::Sympathetic($e) => $body,
+            Effect::Reverse($e) => $body,
         }
     };
 }
@@ -2171,6 +2944,8 @@ impl Effect {
             6 => Effect::Distortion(Box::new(Distortion::new(b))),
             7 => Effect::Eq(Box::new(Eq::new(b))),
             8 => Effect::DynFilter(Box::new(DynFilter::new(b, fp.clone()))),
+            9 => Effect::Sympathetic(Box::new(Sympathetic::new(b))),
+            10 => Effect::Reverse(Box::new(Reverse::new(b))),
             _ => return None,
         };
         e.setpreset(0, protect_filter);
@@ -2203,6 +2978,8 @@ impl Effect {
             Effect::Distortion(_) => 6,
             Effect::Eq(_) => 2,
             Effect::DynFilter(_) => 5,
+            Effect::Sympathetic(_) => 5,
+            Effect::Reverse(_) => 3,
         }
     }
     fn cleanup(&mut self) {
@@ -2217,6 +2994,11 @@ impl Effect {
         }
         match self {
             Effect::Distortion(d) => d.cleanup(),
+            Effect::Sympathetic(e) => {
+                e.ppreset = np;
+                e.calc_freqs();
+                e.cleanup();
+            }
             Effect::DynFilter(d) => {
                 if !protect_filter {
                     d.fp = DynFilter::filter_preset(np);
@@ -2359,6 +3141,7 @@ pub struct EffectMgr {
     preset: u8,
     settings: [i16; 128],
     efx: Option<Effect>,
+    speedfactor: f32,
     pub efxoutl: Vec<f32>,
     pub efxoutr: Vec<f32>,
     sr: f32,
@@ -2375,6 +3158,7 @@ impl EffectMgr {
             preset: 0,
             settings: [-1; 128],
             efx: None,
+            speedfactor: 0.0,
             efxoutl: vec![0.0; bs],
             efxoutr: vec![0.0; bs],
             sr,
@@ -2403,7 +3187,7 @@ impl EffectMgr {
     /// Bring the running effect in line with `cfg`; only rebuilds when
     /// type/preset/filter change, otherwise applies parameter deltas.
     pub fn apply(&mut self, cfg: &EffectCfg, tempo: f32) {
-        let rebuild = cfg.kind != self.kind || cfg.preset != self.preset || self.efx.is_none() != (cfg.kind == 0 || cfg.kind > 8);
+        let rebuild = cfg.kind != self.kind || cfg.preset != self.preset || self.efx.is_none() != (cfg.kind == 0 || cfg.kind > 10);
         let filter_changed = match &self.efx {
             Some(Effect::DynFilter(d)) => format!("{:?}", d.fp) != format!("{:?}", cfg.filter),
             _ => false,
@@ -2419,6 +3203,7 @@ impl EffectMgr {
             }
             self.settings = [-2; 128];
         }
+        self.speedfactor = if cfg.numerator > 0 { cfg.denominator as f32 / (4.0 * cfg.numerator as f32) } else { 0.0 };
         let mut settings = cfg.settings;
         if cfg.numerator > 0 && cfg.denominator > 0 {
             match cfg.kind {
@@ -2444,6 +3229,23 @@ impl EffectMgr {
     pub fn cleanup(&mut self) {
         if let Some(e) = self.efx.as_mut() {
             e.cleanup();
+        }
+    }
+
+    /// Master note-on notification (Zyn's `Sync`), for Reverse.
+    pub fn note_on(&mut self) {
+        if let Some(Effect::Reverse(r)) = self.efx.as_mut() {
+            r.note_on();
+        }
+    }
+
+    /// Host transport for Reverse's host-sync mode (beat at block start).
+    pub fn set_transport(&mut self, playing: bool, beat: f64, tempo: f32) {
+        if let Some(Effect::Reverse(r)) = self.efx.as_mut() {
+            r.playing = playing;
+            r.beat = beat;
+            r.tempo = tempo;
+            r.speedfactor = self.speedfactor;
         }
     }
 
@@ -2535,6 +3337,8 @@ pub fn preset_names(kind: u8) -> &'static [&'static str] {
         6 => &["Overdrive 1", "Overdrive 2", "A. Exciter 1", "A. Exciter 2", "Guitar Amp", "Quantisize"],
         7 => &["EQ 1", "EQ 2"],
         8 => &["WahWah", "AutoWah", "Sweep", "VocalMorph 1", "VocalMorph 2"],
+        9 => &["Generic", "Piano 12-String", "Piano 60-String", "Guitar 6-String", "Guitar 12-String"],
+        10 => &["Note On", "Note On/Off", "Auto"],
         _ => &[],
     }
 }

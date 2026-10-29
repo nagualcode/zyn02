@@ -796,6 +796,8 @@ fn effect_param_names(kind: u8) -> Vec<(usize, &'static str)> {
         6 => vec![(0, "Amount"), (1, "Pan"), (2, "LR Cross"), (3, "Drive"), (4, "Level"), (7, "LPF"), (8, "HPF"), (11, "Shape"), (12, "Offset")],
         7 => vec![(0, "Gain")],
         8 => vec![(0, "Amount"), (1, "Pan"), (2, "Freq"), (3, "Rnd"), (5, "St.df"), (6, "LFO Dep"), (7, "Amp.Sns"), (9, "Smooth")],
+        9 => vec![(0, "Amount"), (1, "Pan"), (2, "Q"), (3, "Drive"), (4, "Level"), (5, "Spread"), (7, "LPF"), (8, "HPF"), (9, "Unison"), (10, "Strings"), (11, "Base")],
+        10 => vec![(0, "Amount"), (1, "Pan"), (2, "Length"), (4, "Phase"), (5, "X-Fade")],
         _ => vec![],
     }
 }
@@ -804,8 +806,8 @@ fn effect_param_names(kind: u8) -> Vec<(usize, &'static str)> {
 fn effect_slot(ui: &mut Ui, id: &str, cfg: &mut EffectCfg, insertion: bool) -> bool {
     let mut ch = false;
     row(ui, |ui| {
-        let mut k = cfg.kind.min(8);
-        if choice(ui, (id, "kind"), "Effect", &mut k, &EFFECT_NAMES[..9], 80.0) {
+        let mut k = cfg.kind.min(10);
+        if choice(ui, (id, "kind"), "Effect", &mut k, &EFFECT_NAMES, 80.0) {
             cfg.set_kind(k, insertion);
             ch = true;
         }
@@ -849,6 +851,11 @@ fn effect_slot(ui: &mut Ui, id: &str, cfg: &mut EffectCfg, insertion: bool) -> b
                 toggles.push((14, "Analog", &["Off", "On"]));
             }
             5 | 8 => toggles.push((4, "LFO", &["Sine", "Tri"])),
+            9 => toggles.push((6, "Negate", &["Off", "On"])),
+            10 => {
+                toggles.push((3, "Stereo", &["Off", "On"]));
+                toggles.push((6, "Sync", &["Note On", "On/Off", "Auto", "Host"]));
+            }
             6 => {
                 toggles.push((5, "Type", &WAVESHAPE_NAMES[1..]));
                 toggles.push((6, "Negate", &["Off", "On"]));

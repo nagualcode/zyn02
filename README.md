@@ -41,7 +41,7 @@ this repo; see *How it was checked* below).
 |---|---|
 | All 1318 instruments in the bundled banks, instrument effects off | **862 bit-for-bit identical** (error < −40 dB, most at −120 dB) |
 | The rest | statistically identical; they diverge only where the original is itself random or chaotic (see below) |
-| Every effect × every factory preset × insertion/system | **bit-identical** (zero error), except 3 Distortion presets and 4 DynFilter presets at −75 to −110 dB |
+| Every effect (all 10) × every factory preset × insertion/system | **bit-identical** (zero error), except 3 Distortion presets and 4 DynFilter presets at −75 to −110 dB |
 | PADsynth wavetables | magnitude spectra **identical**; phases are random by design |
 | Save → reload in Zyn02 | lossless on every tested patch (`cargo test`) |
 
@@ -82,9 +82,11 @@ before 3.0.6), the pre-3.0.7 pan law.
 - **Filters**: analog biquads (9 types, up to 5 stages, smoothed cutoff),
   formant filter with vowel sequences, state-variable, Moog ladder, comb.
 - **Effects**: Reverb, Echo, Chorus/Flanger, Phaser (classic and analog),
-  AlienWah, Distortion, 8-band EQ, Dynamic Filter, with all factory
-  presets. (Zyn 3.0.7's new Sympathetic and Reverse effects are not ported
-  yet; patches using them load with that slot silent.)
+  AlienWah, Distortion, 8-band EQ, Dynamic Filter, and Zyn 3.0.7's
+  Sympathetic (a bank of up to 228 resonating comb "strings": generic,
+  piano and guitar tunings) and Reverse (reversed segments triggered by
+  notes, free-running, or locked to the host's beat), with all factory
+  presets.
 - **Performance**: poly / mono / legato, portamento (constant or
   proportional, up/down stretch, thresholds), key and voice limits,
   sustain, velocity curves, microtonal scales and keyboard maps from .xmz.
@@ -134,15 +136,12 @@ channel, as in Zyn.
 
 ## Install (macOS, Apple Silicon)
 
-1. Download `Zyn02-macOS-arm64.zip` from [Releases](../../releases) and unzip it.
-2. Copy the formats your DAW uses:
-   - `Zyn02.component` → `~/Library/Audio/Plug-Ins/Components/` (Logic, Ableton Live, GarageBand)
-   - `Zyn02.vst3` → `~/Library/Audio/Plug-Ins/VST3/`
-   - `Zyn02.clap` → `~/Library/Audio/Plug-Ins/CLAP/`
-3. The bundles are ad-hoc signed, not notarized. Clear the quarantine once:
+1. Download `Zyn02-AU-macOS-arm64.zip` from [Releases](../../releases) and unzip it.
+2. Copy `Zyn02.component` to `~/Library/Audio/Plug-Ins/Components/`
+   (Logic, Ableton Live, GarageBand). VST3 and CLAP build from source.
+3. The bundle is ad-hoc signed, not notarized. Clear the quarantine once:
    ```sh
-   cd ~/Library/Audio/Plug-Ins
-   xattr -dr com.apple.quarantine Components/Zyn02.component VST3/Zyn02.vst3 CLAP/Zyn02.clap
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Zyn02.component
    ```
 4. Rescan plug-ins in your DAW: *Jardim Sonoro › Zyn02*.
 

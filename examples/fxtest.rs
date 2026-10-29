@@ -19,6 +19,9 @@ fn main() {
             l[i] = env * (0.3 * (2.0 * pi * 220.0 * t).sin() + 0.2 * (2.0 * pi * 1370.0 * t).sin()) + if n % 11025 == 0 { 0.8 } else { 0.0 };
             r[i] = env * (0.3 * (2.0 * pi * 330.0 * t).sin() + 0.1 * (2.0 * pi * 4100.0 * t).sin());
         }
+        if kind == 10 && b % 86 == 0 {
+            em.note_on();
+        }
         em.out(&mut l, &mut r);
         for i in 0..256 {
             out.extend_from_slice(&l[i].to_le_bytes());

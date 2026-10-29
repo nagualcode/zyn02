@@ -630,6 +630,18 @@ impl PartRt {
         self.porta_decref(d.porta);
     }
 
+    pub fn effects_note_on(&mut self) {
+        for e in self.efx.iter_mut() {
+            e.note_on();
+        }
+    }
+
+    pub fn effects_transport(&mut self, playing: bool, beat: f64, tempo: f32) {
+        for e in self.efx.iter_mut() {
+            e.set_transport(playing, beat, tempo);
+        }
+    }
+
     pub fn kill_all_notes(&mut self) {
         while !self.pool.is_empty() {
             self.kill_desc(self.pool.len() - 1);

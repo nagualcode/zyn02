@@ -224,6 +224,9 @@ pub struct Engine {
     pub peak: [f32; 2],
     /// Copy of part 0's raw output (before part gain), for tests.
     pub debug_part: Option<(Vec<f32>, Vec<f32>)>,
+    /// Host transport: playing flag and beat position at the next block.
+    pub playing: bool,
+    pub beat: f64,
 }
 
 impl Engine {
@@ -262,6 +265,8 @@ impl Engine {
             tempo: 120.0,
             peak: [0.0; 2],
             debug_part: None,
+            playing: false,
+            beat: 0.0,
         };
         e.apply_params();
         e
@@ -311,6 +316,16 @@ impl Engine {
     }
 
     pub fn event(&mut self, ev: Event) {
+        if let Event::NoteOn { vel, .. } = ev {
+            if vel > 0 {
+                for e in self.sysefx.iter_mut().chain(self.insefx.iter_mut()) {
+                    e.note_on();
+                }
+                for p in self.parts.iter_mut() {
+                    p.effects_note_on();
+                }
+            }
+        }
         let patch = self.patch.clone();
         let master_keyshift = patch.keyshift as i32 - 64;
         let mut env = PartEnv {
@@ -363,6 +378,16 @@ impl Engine {
         self.time.tempo = self.tempo.round().max(1.0) as u32;
         self.outl.fill(0.0);
         self.outr.fill(0.0);
+        let (pl, bt, tp) = (self.playing, self.beat, self.tempo);
+        for e in self.sysefx.iter_mut().chain(self.insefx.iter_mut()) {
+            e.set_transport(pl, bt, tp);
+        }
+        for p in self.parts.iter_mut() {
+            p.effects_transport(pl, bt, tp);
+        }
+        if self.playing {
+            self.beat += self.synth.buffersize_f as f64 / self.synth.samplerate_f as f64 * self.tempo as f64 / 60.0;
+        }
         {
             let master_keyshift = patch.keyshift as i32 - 64;
             let mut env = PartEnv {

@@ -238,6 +238,10 @@ impl PluginLogic for Zyn {
         if context.transport.tempo > 0.0 {
             eng.tempo = context.transport.tempo as f32;
         }
+        eng.playing = context.transport.playing;
+        if eng.playing {
+            eng.beat = context.transport.position_beats;
+        }
 
         // Host parameters -> controllers on every MIDI channel.
         let vals = ctl_values(params);
