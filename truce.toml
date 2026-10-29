@@ -1,0 +1,19 @@
+[vendor]
+name = "Jardim Sonoro"
+id = "com.jardimsonoro"
+url = "https://github.com/nagualcode"
+au_manufacturer = "JdSn"
+
+[[plugin]]
+name = "Zyn02"
+bundle_id = "zyn02"
+crate = "zyn02"
+category = "instrument"
+description = """
+ZynAddSubFX rebuilt in Rust: ADDsynth, SUBsynth and PADsynth engines \
+with 16 kit items per instrument, the Zyn effect rack and the original \
+.xiz/.xmz patch format, including the bundled instrument banks.
+"""
+fourcc = "Zy02"
+au_tag = "Synthesizer"
+vst3_subcategory = "Instrument|Synth"

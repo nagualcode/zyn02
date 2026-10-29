@@ -1,0 +1,60 @@
+[package]
+name = "zyn02"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "ZynAddSubFX rebuilt in Rust with truce: ADDsynth, SUBsynth and PADsynth with the original patch format"
+authors = ["Jardim Sonoro"]
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "zyn02-standalone"
+path = "src/main.rs"
+required-features = ["standalone"]
+
+[[example]]
+name = "render"
+path = "examples/render.rs"
+
+[features]
+default = ["clap", "vst3", "au", "standalone"]
+clap = ["dep:truce-clap", "dep:clap-sys"]
+vst3 = ["dep:truce-vst3"]
+au = ["dep:truce-au"]
+standalone = ["dep:truce-standalone"]
+shell = ["truce/shell"]
+rt-paranoid = ["truce/rt-paranoid"]
+
+[dependencies]
+truce = { version = "6.3" }
+truce-core = { version = "6.3" }
+truce-params = { version = "6.3" }
+truce-egui = { version = "6.3" }
+truce-font = { version = "6.3" }
+egui = "0.34"
+truce-clap = { version = "6.3", optional = true }
+truce-vst3 = { version = "6.3", optional = true }
+truce-au = { version = "6.3", optional = true }
+truce-standalone = { version = "6.3", features = ["gui"], optional = true }
+clap-sys = { version = "0.5", optional = true }
+realfft = "3"
+quick-xml = "0.37"
+flate2 = "1"
+parking_lot = "0.12"
+
+[dev-dependencies]
+truce-test = { version = "6.3" }
+hound = "3"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+
+[profile.dev]
+opt-level = 2
+
+[profile.shell]
+inherits = "release"
