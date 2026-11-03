@@ -45,6 +45,52 @@ pub mod theme {
     pub const METER_LO: Color32 = Color32::from_rgb(0x5f, 0xd0, 0x6a);
     pub const METER_MID: Color32 = Color32::from_rgb(0xf0, 0xd2, 0x4a);
     pub const METER_HI: Color32 = Color32::from_rgb(0xff, 0x55, 0x45);
+
+    // Function colours: the same job has the same colour on every page.
+    /// Amplitude sections.
+    pub const AMP: Color32 = Color32::from_rgb(0xff, 0x78, 0x6a);
+    /// Frequency sections.
+    pub const FRQ: Color32 = Color32::from_rgb(0x6c, 0xa8, 0xff);
+    /// Filter sections.
+    pub const FLT: Color32 = Color32::from_rgb(0x72, 0xdc, 0x8e);
+    /// Modulators and controllers.
+    pub const MODC: Color32 = Color32::from_rgb(0xf2, 0x7c, 0xc4);
+    /// Resonance.
+    pub const RES: Color32 = Color32::from_rgb(0xf0, 0xc8, 0x50);
+
+    /// Linear blend from `a` to `b`.
+    pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
+        let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+        Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+    }
+
+    /// LFOs are the lighter shade of their section's colour.
+    pub fn lfo_tint(c: Color32) -> Color32 {
+        mix(c, Color32::WHITE, 0.42)
+    }
+
+    /// Each of the 16 parts has its own hue, starting at Zyn's yellow.
+    pub fn part_color(i: usize) -> Color32 {
+        let h = (0.125 + i as f32 / 16.0).fract();
+        egui::ecolor::Hsva::new(h, 0.82, 0.92, 1.0).into()
+    }
+
+    /// Each effect type has its own colour (0 = empty slot).
+    pub fn fx_color(kind: u8) -> Color32 {
+        match kind {
+            1 => Color32::from_rgb(0x8f, 0x9c, 0xff), // reverb
+            2 => Color32::from_rgb(0x52, 0xd6, 0xc8), // echo
+            3 => Color32::from_rgb(0x62, 0xc6, 0xff), // chorus
+            4 => Color32::from_rgb(0xee, 0x7f, 0xd0), // phaser
+            5 => Color32::from_rgb(0xb8, 0x8c, 0xff), // alienwah
+            6 => Color32::from_rgb(0xff, 0x6f, 0x50), // distortion
+            7 => Color32::from_rgb(0xe9, 0xd4, 0x5a), // EQ
+            8 => Color32::from_rgb(0x8f, 0xe0, 0x6a), // dynamic filter
+            9 => Color32::from_rgb(0xff, 0xb2, 0x7a), // sympathetic
+            10 => FX,                                 // reverse
+            _ => FAINT,
+        }
+    }
 }
 use theme::*;
 
@@ -63,6 +109,26 @@ const LABEL: f32 = 8.5;
 
 /// Generic rotary for a float in `min..=max`.
 pub fn knobf(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32, default: f32, fmt: &dyn Fn(f32) -> String, color: Color32) -> bool {
+    knob_core(ui, label, v, min, max, default, fmt, color, true)
+}
+
+/// A byte rotary with no meaningful default (effect parameters, whose
+/// defaults come from the preset): its value is never dimmed.
+pub fn knob_live(ui: &mut Ui, label: &str, v: &mut u8, color: Color32) -> bool {
+    let mut f = *v as f32;
+    let d = f;
+    let fmt = |x: f32| format!("{}", x.round() as i32);
+    if knob_core(ui, label, &mut f, 0.0, 127.0, d, &fmt, color, false) {
+        let n = f.round().clamp(0.0, 127.0) as u8;
+        if n != *v {
+            *v = n;
+            return true;
+        }
+    }
+    false
+}
+
+fn knob_core(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32, default: f32, fmt: &dyn Fn(f32) -> String, color: Color32, has_default: bool) -> bool {
     let (rect, resp) = ui.allocate_exact_size(vec2(KW, KH), Sense::click_and_drag());
     let mut t = ((*v - min) / (max - min)).clamp(0.0, 1.0);
     let old = *v;
@@ -93,11 +159,14 @@ pub fn knobf(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32, default:
     }
     let dn = (default - min) / (max - min);
     let bipolar = (min < 0.0 && max > 0.0) || (dn > 0.45 && dn < 0.55);
-    draw_knob(ui, rect, &resp, label, t, bipolar, &fmt(*v), color);
+    let edited = !has_default || (t - dn).abs() > 0.004;
+    draw_knob(ui, rect, &resp, label, t, bipolar, &fmt(*v), color, edited);
     *v != old
 }
 
-pub fn draw_knob(ui: &Ui, rect: Rect, resp: &Response, label: &str, t: f32, bipolar: bool, text: &str, color: Color32) {
+/// `edited` = the value differs from its default: its readout is bright,
+/// so what shapes a patch can be read at a glance.
+pub fn draw_knob(ui: &Ui, rect: Rect, resp: &Response, label: &str, t: f32, bipolar: bool, text: &str, color: Color32, edited: bool) {
     let p = ui.painter();
     let active = resp.hovered() || resp.dragged();
     p.text(pos2(rect.center().x, rect.top()), Align2::CENTER_TOP, label, font(LABEL), if active { TEXT } else { DIM });
@@ -121,7 +190,7 @@ pub fn draw_knob(ui: &Ui, rect: Rect, resp: &Response, label: &str, t: f32, bipo
     let a = START + SWEEP * t;
     p.circle_filled(c, r - 4.0, if active { CONTROL_HOVER } else { CONTROL });
     p.line_segment([c + vec2(a.cos(), a.sin()) * 1.5, c + vec2(a.cos(), a.sin()) * (r - 3.5)], Stroke::new(1.6_f32, TEXT));
-    p.text(pos2(rect.center().x, rect.bottom()), Align2::CENTER_BOTTOM, text, font(LABEL), if active { color } else { TEXT });
+    p.text(pos2(rect.center().x, rect.bottom()), Align2::CENTER_BOTTOM, text, font(LABEL), if active { color } else if edited { TEXT } else { mix(DIM, FAINT, 0.35) });
 }
 
 /// Rotary for Zyn's classic 0..127 byte parameters.
@@ -163,7 +232,7 @@ pub fn knob_i(ui: &mut Ui, label: &str, v: &mut i32, min: i32, max: i32, default
 pub fn button_face(p: &egui::Painter, rect: Rect, on: bool, hovered: bool, text: &str, size: f32, color: Color32) {
     let fill = if on { color } else if hovered { CONTROL_HOVER } else { CONTROL };
     p.rect_filled(rect, CornerRadius::same(3), fill);
-    p.text(rect.center(), Align2::CENTER_CENTER, text, font(size), if on { ON_TEXT } else { TEXT });
+    p.text(rect.center(), Align2::CENTER_CENTER, text, font(size), if on { ON_TEXT } else { mix(DIM, color, 0.45) });
 }
 
 pub fn button(ui: &mut Ui, text: &str, on: bool, color: Color32, size: Vec2) -> Response {
@@ -178,7 +247,7 @@ pub fn action(ui: &mut Ui, text: &str, color: Color32, size: Vec2) -> Response {
     let p = ui.painter();
     p.rect_filled(rect, CornerRadius::same(3), if resp.hovered() { CONTROL_HOVER } else { CONTROL });
     p.rect_stroke(rect, CornerRadius::same(3), Stroke::new(1.0_f32, color.gamma_multiply(if resp.hovered() { 0.9 } else { 0.45 })), StrokeKind::Inside);
-    p.text(rect.center(), Align2::CENTER_CENTER, text, font(9.0), TEXT);
+    p.text(rect.center(), Align2::CENTER_CENTER, text, font(9.0), mix(TEXT, color, 0.55));
     resp
 }
 
@@ -264,6 +333,11 @@ pub fn combo(ui: &mut Ui, id: impl std::hash::Hash, v: &mut u8, options: &[&str]
 /// Segmented tab strip; returns the clicked index. `marks[i]` draws a dot
 /// (used for "this section is enabled").
 pub fn segmented(ui: &mut Ui, items: &[&str], sel: usize, marks: &[bool], color: Color32, w: f32, h: f32) -> Option<usize> {
+    segmented_c(ui, items, sel, marks, &[color], w, h)
+}
+
+/// `segmented` with one colour per item (the last one repeats).
+pub fn segmented_c(ui: &mut Ui, items: &[&str], sel: usize, marks: &[bool], colors: &[Color32], w: f32, h: f32) -> Option<usize> {
     let mut out = None;
     let (rect, _) = ui.allocate_exact_size(vec2(w * items.len() as f32, h), Sense::hover());
     let p = ui.painter();
@@ -272,9 +346,10 @@ pub fn segmented(ui: &mut Ui, items: &[&str], sel: usize, marks: &[bool], color:
         let r = Rect::from_min_size(pos2(rect.left() + i as f32 * w, rect.top()), vec2(w, h)).shrink(1.0);
         let resp = ui.interact(r, ui.id().with(("seg", t, rect.min.x as i32, rect.min.y as i32, i)), Sense::click());
         let on = i == sel;
+        let color = colors[i.min(colors.len() - 1)];
         let fill = if on { color } else if resp.hovered() { CONTROL_HOVER } else { PANEL };
         p.rect_filled(r, CornerRadius::same(2), fill);
-        let tc = if on { ON_TEXT } else { TEXT };
+        let tc = if on { ON_TEXT } else { mix(TEXT, color, 0.5) };
         let mark = marks.get(i).copied().unwrap_or(false);
         let tx = if mark { r.center().x + 3.0 } else { r.center().x };
         p.text(pos2(tx, r.center().y), Align2::CENTER_CENTER, *t, font(8.5), tc);
@@ -302,7 +377,7 @@ pub fn panel<R>(ui: &mut Ui, title: &str, color: Color32, width: f32, add: impl 
 
 /// Panel with fixed width and optional fixed height.
 pub fn panel_h<R>(ui: &mut Ui, title: &str, color: Color32, width: f32, height: Option<f32>, add: impl FnOnce(&mut Ui) -> R) -> R {
-    let frame = egui::Frame::new().fill(PANEL).corner_radius(CornerRadius::same(4)).inner_margin(egui::Margin { left: 6, right: 6, top: (HEAD_H + 5.0) as i8, bottom: 5 });
+    let frame = egui::Frame::new().fill(mix(PANEL, color, 0.035)).corner_radius(CornerRadius::same(4)).inner_margin(egui::Margin { left: 6, right: 6, top: (HEAD_H + 5.0) as i8, bottom: 5 });
     let r = frame.show(ui, |ui| {
         ui.set_width(width - 12.0);
         if let Some(h) = height {
@@ -318,9 +393,9 @@ pub fn panel_h<R>(ui: &mut Ui, title: &str, color: Color32, width: f32, height: 
     let rect = r.response.rect;
     let head = Rect::from_min_size(rect.min, vec2(rect.width(), HEAD_H));
     let p = ui.painter();
-    p.rect_filled(head, CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 }, HEADER);
+    p.rect_filled(head, CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 }, mix(HEADER, color, 0.2));
     p.rect_filled(Rect::from_min_size(head.min, vec2(3.0, head.height())), CornerRadius { nw: 4, ne: 0, sw: 0, se: 0 }, color);
-    p.text(pos2(head.left() + 9.0, head.center().y), Align2::LEFT_CENTER, title, font(9.5), TEXT);
+    p.text(pos2(head.left() + 9.0, head.center().y), Align2::LEFT_CENTER, title, font(9.5), mix(TEXT, color, 0.6));
     r.inner
 }
 
@@ -333,10 +408,11 @@ pub fn tagged<R>(ui: &mut Ui, tag: &str, color: Color32, add: impl FnOnce(&mut U
         let strip = Rect::from_min_size(strip.min, vec2(11.0, h));
         let p = ui.painter();
         p.rect_filled(Rect::from_min_size(strip.min + vec2(4.0, 0.0), vec2(2.0, h)), CornerRadius::same(1), color.gamma_multiply(0.55));
-        let galley = p.layout_no_wrap(tag.to_string(), font(7.5), DIM);
+        let tc = mix(DIM, color, 0.7);
+        let galley = p.layout_no_wrap(tag.to_string(), font(7.5), tc);
         let gw = galley.size().x;
         let pos = pos2(strip.left() - 1.0, strip.center().y + gw * 0.5);
-        p.add(egui::epaint::TextShape::new(pos, galley, DIM).with_angle(-std::f32::consts::FRAC_PI_2));
+        p.add(egui::epaint::TextShape::new(pos, galley, tc).with_angle(-std::f32::consts::FRAC_PI_2));
         inner.inner
     });
     r.inner

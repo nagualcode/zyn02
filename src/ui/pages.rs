@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Sense, Stroke, Ui, pos2, vec2};
 
 use super::w::theme::*;
 use super::w::*;
@@ -30,13 +30,13 @@ const FULL_W: f32 = 1124.0;
 const DET_TYPES: [&str; 5] = ["L35c", "L10c", "E100c", "E1200c", "-"];
 
 /// A panel whose first row is a tab strip; returns the selected tab.
-fn tab_panel(ui: &mut Ui, title: &str, color: Color32, width: f32, height: f32, tabs: &[&str], marks: &[bool], sel: &mut usize, add: impl FnOnce(&mut Ui, usize)) {
+fn tab_panel(ui: &mut Ui, title: &str, colors: &[Color32], width: f32, height: f32, tabs: &[&str], marks: &[bool], sel: &mut usize, add: impl FnOnce(&mut Ui, usize)) {
     if *sel >= tabs.len() {
         *sel = 0;
     }
-    panel_h(ui, title, color, width, Some(height), |ui| {
-        let tw = ((width - 12.0) / tabs.len() as f32).min(100.0);
-        if let Some(i) = segmented(ui, tabs, *sel, marks, color, tw, 18.0) {
+    panel_h(ui, title, colors[*sel], width, Some(height), |ui| {
+        let tw = ((width - 12.0) / tabs.len() as f32).min(112.0);
+        if let Some(i) = segmented_c(ui, tabs, *sel, marks, colors, tw, 18.0) {
             *sel = i;
         }
         ui.add_space(2.0);
@@ -92,7 +92,7 @@ pub fn part_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState)
     let mut pp = (*patch.parts[pi]).clone();
     let mut ch = false;
     let mut kit_changed = false;
-    let c = ZYN;
+    let c = part_color(pi);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             panel(ui, "PART", c, COL3, |ui| {
@@ -200,7 +200,7 @@ pub fn part_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState)
                     }
                     if it.enabled {
                         let mut nm = it.name.clone();
-                        if ui.add(egui::TextEdit::singleline(&mut nm).desired_width(150.0)).changed() {
+                        if ui.add_sized(vec2(150.0, 18.0), egui::TextEdit::singleline(&mut nm)).changed() {
                             it.name = nm;
                             ch = true;
                         }
@@ -264,7 +264,7 @@ fn oscil_wave(o: &OscilGen) -> Vec<f32> {
 /// generator parameters on the right. Returns true when the spectrum must
 /// be rebuilt.
 pub fn oscil(ui: &mut Ui, id: &str, o: &mut OscilGen, color: Color32, show_rand: bool, big: bool) -> bool {
-    let k = if big { 1.45 } else { 1.0 };
+    let k = if big { 1.85 } else { 1.0 };
     let mut ch = false;
     let wave = oscil_wave(o);
     let spec = o.spectrum(129);
@@ -374,10 +374,10 @@ pub fn add_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
 
 fn add_global(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
     let mut ch = false;
-    let c = ADD;
     {
         let g = &mut ad.global;
         ui.horizontal_top(|ui| {
+            let c = AMP;
             panel_h(ui, "AMPLITUDE", c, COL3, Some(232.0), |ui| {
                 row(ui, |ui| {
                     ch |= knobf(ui, "Volume", &mut g.volume, -60.0, 20.0, 0.0, &|v| format!("{v:+.1}"), c);
@@ -396,8 +396,9 @@ fn add_global(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                     ch |= toggle(ui, "RND GROUP", &mut g.hrandgrouping, c);
                 });
                 ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "gae", &mut g.amp_envelope, c));
-                ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "gal", &mut g.amp_lfo, c));
+                ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "gal", &mut g.amp_lfo, lfo_tint(c)));
             });
+            let c = FRQ;
             panel_h(ui, "FREQUENCY", c, COL3, Some(232.0), |ui| {
                 row(ui, |ui| {
                     ch |= freq_controls(ui, &mut g.detune, &mut g.coarse_detune, &mut g.detune_type, "gf", c, false);
@@ -406,8 +407,9 @@ fn add_global(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                 });
                 ui.add_space(19.0);
                 ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "gfe", &mut g.freq_envelope, c));
-                ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "gfl", &mut g.freq_lfo, c));
+                ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "gfl", &mut g.freq_lfo, lfo_tint(c)));
             });
+            let c = FLT;
             panel_h(ui, "FILTER", c, COL3, Some(232.0), |ui| {
                 let (vs, vf) = (&mut g.filter_velocity_scale, &mut g.filter_velocity_scale_function);
                 ch |= filter(ui, "gflt", &mut g.filter, c, |ui| {
@@ -417,12 +419,13 @@ fn add_global(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                 });
                 ui.add_space(19.0);
                 ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "gfle", &mut g.filter_envelope, c));
-                ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "gfll", &mut g.filter_lfo, c));
+                ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "gfll", &mut g.filter_lfo, lfo_tint(c)));
             });
         });
     }
     ch |= voice_cards(ui, ad, st);
     let r = &mut ad.global.reson;
+    let c = RES;
     panel(ui, "RESONANCE", c, FULL_W, |ui| {
         row(ui, |ui| {
             ch |= toggle_pair(ui, ("ENABLED", &mut r.enabled), ("PROTECT 1st", &mut r.protect_fundamental), c);
@@ -455,7 +458,7 @@ fn voice_cards(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
             for i in 0..NUM_VOICES {
                 let v = &mut ad.voices[i];
                 let on = v.enabled;
-                let frame = egui::Frame::new().fill(if on { CONTROL.gamma_multiply(0.75) } else { PANEL2 }).corner_radius(CornerRadius::same(3)).inner_margin(egui::Margin::same(4));
+                let frame = egui::Frame::new().fill(if on { mix(PANEL, c, 0.14) } else { PANEL2 }).corner_radius(CornerRadius::same(3)).inner_margin(egui::Margin::same(4));
                 frame.show(ui, |ui| ui.vertical(|ui| {
                     ui.set_width(cw - 8.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
@@ -553,20 +556,21 @@ fn add_voice(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
         panel_h(ui, "OSCILLATOR", c, OSC_W, Some(466.0 - 68.0 - 6.0), |ui| {
             if has_mod_osc {
                 let sel = st.mod_osc as usize;
-                if let Some(i) = segmented(ui, &["CARRIER", "MODULATOR"], sel, &[], c, 90.0, 18.0) {
+                if let Some(i) = segmented_c(ui, &["CARRIER", "MODULATOR"], sel, &[], &[c, MODC], 90.0, 18.0) {
                     st.mod_osc = i == 1;
                 }
                 ui.add_space(2.0);
             }
             if st.mod_osc {
-                ch |= oscil(ui, "fmosc", &mut v.fm_oscil, c.gamma_multiply(0.75), true, true);
+                ch |= oscil(ui, "fmosc", &mut v.fm_oscil, MODC, true, true);
             } else {
                 ch |= oscil(ui, "vosc", &mut v.oscil, c, true, true);
             }
         });
         let marks = [v.fm_enabled != FmType::None, v.amp_envelope_enabled || v.amp_lfo_enabled, v.freq_envelope_enabled || v.freq_lfo_enabled, v.filter_enabled];
-        tab_panel(ui, "VOICE MODULATION", c, SIDE_W, 466.0 - 68.0 - 6.0, &["MODULATOR", "AMP", "FREQ", "FILTER"], &marks, &mut st.tab, |ui, tab| match tab {
+        tab_panel(ui, "VOICE MODULATION", &[MODC, AMP, FRQ, FLT], SIDE_W, 466.0 - 68.0 - 6.0, &["MODULATOR", "AMP", "FREQ", "FILTER"], &marks, &mut st.tab, |ui, tab| match tab {
             0 => {
+                let c = MODC;
                 let mut fm = v.fm_enabled as u8;
                 row(ui, |ui| {
                     if choice(ui, "fmt", "Type", &mut fm, &["Off", "Mix", "Ring", "PM", "FM", "PWM"], 56.0) {
@@ -606,6 +610,7 @@ fn add_voice(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                 }
             }
             1 => {
+                let c = AMP;
                 row(ui, |ui| {
                     ch |= toggle(ui, "AMP ENVELOPE", &mut v.amp_envelope_enabled, c);
                     ch |= toggle(ui, "AMP LFO", &mut v.amp_lfo_enabled, c);
@@ -614,10 +619,11 @@ fn add_voice(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                     ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "vae", &mut v.amp_envelope, c));
                 }
                 if v.amp_lfo_enabled {
-                    ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "val", &mut v.amp_lfo, c));
+                    ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "val", &mut v.amp_lfo, lfo_tint(c)));
                 }
             }
             2 => {
+                let c = FRQ;
                 row(ui, |ui| {
                     ch |= toggle(ui, "FREQ ENVELOPE", &mut v.freq_envelope_enabled, c);
                     ch |= toggle(ui, "FREQ LFO", &mut v.freq_lfo_enabled, c);
@@ -626,10 +632,11 @@ fn add_voice(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                     ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "vfe", &mut v.freq_envelope, c));
                 }
                 if v.freq_lfo_enabled {
-                    ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "vfl", &mut v.freq_lfo, c));
+                    ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "vfl", &mut v.freq_lfo, lfo_tint(c)));
                 }
             }
             _ => {
+                let c = FLT;
                 row(ui, |ui| {
                     ch |= toggle(ui, "FILTER", &mut v.filter_enabled, c);
                     ch |= toggle(ui, "BYPASS GLOBAL", &mut v.filter_bypass, c);
@@ -648,7 +655,7 @@ fn add_voice(ui: &mut Ui, ad: &mut AdParams, st: &mut UiState) -> bool {
                         ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "vfle", &mut v.filter_envelope, c));
                     }
                     if v.filter_lfo_enabled {
-                        ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "vfll", &mut v.filter_lfo, c));
+                        ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "vfll", &mut v.filter_lfo, lfo_tint(c)));
                     }
                 }
             }
@@ -672,9 +679,10 @@ pub fn sub_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
     let c = SUB;
     panel(ui, "HARMONICS", c, FULL_W, |ui| {
         ch |= bars(ui, "MAGNITUDE (drag to draw, right-click resets)", &mut s.hmag, 0, vec2(FULL_W - 12.0, 104.0), c);
-        ch |= bars(ui, "RELATIVE BANDWIDTH", &mut s.hrelbw, 64, vec2(FULL_W - 12.0, 46.0), c.gamma_multiply(0.6));
+        ch |= bars(ui, "RELATIVE BANDWIDTH", &mut s.hrelbw, 64, vec2(FULL_W - 12.0, 46.0), FRQ);
     });
     ui.horizontal_top(|ui| {
+        let c = AMP;
         panel_h(ui, "AMPLITUDE", c, COL3, Some(282.0), |ui| {
             row(ui, |ui| {
                 ch |= knobf(ui, "Volume", &mut s.volume, -60.0, 0.0, 0.0, &|v| format!("{v:.1}"), c);
@@ -684,6 +692,7 @@ pub fn sub_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
             });
             ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "sae", &mut s.amp_envelope, c));
         });
+        let c = FRQ;
         panel_h(ui, "BANDWIDTH & FREQUENCY", c, COL3, Some(282.0), |ui| {
             row(ui, |ui| {
                 ch |= knob(ui, "Bandw.", &mut s.bandwidth, 40, c);
@@ -723,6 +732,7 @@ pub fn sub_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
                 ch |= tagged(ui, "BW", c, |ui| envelope(ui, "sbe", &mut s.bandwidth_envelope, c));
             }
         });
+        let c = FLT;
         panel_h(ui, "FILTER", c, COL3, Some(282.0), |ui| {
             row(ui, |ui| {
                 ch |= toggle(ui, "FILTER ENABLED", &mut s.global_filter_enabled, c);
@@ -825,8 +835,9 @@ pub fn pad_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
             });
         });
         let marks = [true, true, true];
-        tab_panel(ui, "PAD SOUND", c, SIDE_W, 466.0, &["AMPLITUDE", "FREQUENCY", "FILTER"], &marks, &mut st.tab, |ui, tab| match tab {
+        tab_panel(ui, "PAD SOUND", &[AMP, FRQ, FLT], SIDE_W, 466.0, &["AMPLITUDE", "FREQUENCY", "FILTER"], &marks, &mut st.tab, |ui, tab| match tab {
             0 => {
+                let c = AMP;
                 row(ui, |ui| {
                     ch |= knob(ui, "Volume", &mut p.volume, 90, c);
                     ch |= knob(ui, "Pan", &mut p.panning, 64, c);
@@ -839,17 +850,19 @@ pub fn pad_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
                     ch |= toggle_cell(ui, "Output", "STEREO", &mut p.stereo, c);
                 });
                 ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "pae", &mut p.amp_envelope, c));
-                ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "pal", &mut p.amp_lfo, c));
+                ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "pal", &mut p.amp_lfo, lfo_tint(c)));
             }
             1 => {
+                let c = FRQ;
                 row(ui, |ui| {
                     ch |= freq_controls(ui, &mut p.detune, &mut p.coarse_detune, &mut p.detune_type, "pf", c, false);
                     ch |= fixed_controls(ui, &mut p.fixed_freq, &mut p.fixed_freq_et, &mut p.bend_adjust, &mut p.offset_hz, c);
                 });
                 ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "pfe", &mut p.freq_envelope, c));
-                ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "pfl", &mut p.freq_lfo, c));
+                ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "pfl", &mut p.freq_lfo, lfo_tint(c)));
             }
             _ => {
+                let c = FLT;
                 let (vs, vf) = (&mut p.filter_velocity_scale, &mut p.filter_velocity_scale_function);
                 ch |= filter(ui, "pflt", &mut p.filter, c, |ui| {
                     let mut x = knob(ui, "V.Amt", vs, 0, c);
@@ -857,7 +870,7 @@ pub fn pad_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) 
                     x
                 });
                 ch |= tagged(ui, "ENV", c, |ui| envelope(ui, "pfle", &mut p.filter_envelope, c));
-                ch |= tagged(ui, "LFO", c, |ui| lfo(ui, "pfll", &mut p.filter_lfo, c));
+                ch |= tagged(ui, "LFO", lfo_tint(c), |ui| lfo(ui, "pfll", &mut p.filter_lfo, lfo_tint(c)));
             }
         });
     });
@@ -931,7 +944,7 @@ fn effect_choices(kind: u8) -> Vec<(usize, &'static str, &'static [&'static str]
 /// One effect slot editor (type, preset, parameters). Returns true on change.
 fn effect_slot(ui: &mut Ui, id: &str, cfg: &mut EffectCfg, insertion: bool) -> bool {
     let mut ch = false;
-    let c = FX;
+    let c = fx_color(cfg.kind);
     row(ui, |ui| {
         let mut k = cfg.kind.min(10);
         if choice(ui, (id, "kind"), "Effect", &mut k, &EFFECT_NAMES, 100.0) {
@@ -963,8 +976,7 @@ fn effect_slot(ui: &mut Ui, id: &str, cfg: &mut EffectCfg, insertion: bool) -> b
     row(ui, |ui| {
         for (n, name) in effect_param_names(cfg.kind) {
             let mut v = cfg.settings[n].max(0) as u8;
-            let d = v;
-            if knob(ui, name, &mut v, d, c) {
+            if knob_live(ui, name, &mut v, c) {
                 cfg.settings[n] = v as i16;
                 ch = true;
             }
@@ -1026,17 +1038,20 @@ pub fn fx_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) {
             let mut slot = |ui: &mut Ui, sel: FxSel, idx: String, cfg: &EffectCfg, extra: String, active: bool| {
                 let (r, resp) = ui.allocate_exact_size(vec2(258.0, 20.0), Sense::click());
                 let on = st.fx == sel;
+                let col = fx_color(cfg.kind);
+                let lit = cfg.kind != 0 && active;
                 let pp = ui.painter();
-                pp.rect_filled(r, CornerRadius::same(3), if on { c.gamma_multiply(0.85) } else if resp.hovered() { CONTROL_HOVER } else { CONTROL });
+                pp.rect_filled(r, CornerRadius::same(3), if on { if cfg.kind != 0 { col } else { CONTROL_HOVER } } else if resp.hovered() { CONTROL_HOVER } else if lit { mix(CONTROL, col, 0.16) } else { PANEL2 });
                 let (name, pre) = slot_label(cfg);
-                let tc = if on { ON_TEXT } else if cfg.kind == 0 || !active { FAINT } else { TEXT };
+                let on = on && cfg.kind != 0;
+                let tc = if on { ON_TEXT } else if !lit { FAINT } else { mix(TEXT, col, 0.45) };
                 pp.text(pos2(r.left() + 6.0, r.center().y), Align2::LEFT_CENTER, idx, font(8.5), if on { ON_TEXT } else { DIM });
                 pp.text(pos2(r.left() + 26.0, r.center().y), Align2::LEFT_CENTER, &name, font(9.5), tc);
                 let nw = pp.layout_no_wrap(name.clone(), font(9.5), tc).size().x;
                 pp.text(pos2(r.left() + 32.0 + nw, r.center().y), Align2::LEFT_CENTER, pre, font(8.5), if on { ON_TEXT } else { DIM });
                 pp.text(pos2(r.right() - 6.0, r.center().y), Align2::RIGHT_CENTER, extra, font(8.5), if on { ON_TEXT } else { DIM });
-                if cfg.kind != 0 && active && !on {
-                    pp.circle_filled(pos2(r.left() + 17.0, r.center().y), 2.5, c);
+                if lit && !on {
+                    pp.circle_filled(pos2(r.left() + 17.0, r.center().y), 2.5, col);
                 }
                 if resp.clicked() {
                     pick = Some(sel);
@@ -1078,6 +1093,11 @@ pub fn fx_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) {
             1 => format!("SYSTEM EFFECT {}", n + 1),
             _ => format!("INSERTION EFFECT {}", n + 1),
         };
+        let c = fx_color(match kind {
+            0 => p.parts[pi].efx[n.min(NUM_PART_EFX - 1)].kind,
+            1 => p.sysefx[n.min(NUM_SYS_EFX - 1)].kind,
+            _ => p.insefx[n.min(NUM_INS_EFX - 1)].kind,
+        });
         panel_h(ui, &title, c, FULL_W - 276.0, Some(466.0), |ui| {
             match kind {
                 0 => {
@@ -1096,7 +1116,7 @@ pub fn fx_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) {
                     small_label(ui, "SEND FROM PARTS");
                     row(ui, |ui| {
                         for q in 0..NUM_MIDI_PARTS {
-                            ch |= knob(ui, &format!("P{}", q + 1), &mut p.sysefxvol[n][q], 0, if q == pi { ZYN } else { c });
+                            ch |= knob(ui, &format!("P{}", q + 1), &mut p.sysefxvol[n][q], 0, part_color(q));
                         }
                     });
                     if n + 1 < NUM_SYS_EFX {
@@ -1174,14 +1194,16 @@ pub fn master_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiStat
                 let sel = st.part == i;
                 let part = Arc::make_mut(&mut p.parts[i]);
                 let en = part.enabled;
-                let frame = egui::Frame::new().fill(if sel { CONTROL } else if en { PANEL2 } else { PANEL }).corner_radius(CornerRadius::same(3)).inner_margin(egui::Margin::same(3));
+                let hue = part_color(i);
+                let kc = if en { hue } else { FAINT };
+                let frame = egui::Frame::new().fill(if sel { mix(PANEL, hue, 0.2) } else if en { mix(PANEL2, hue, 0.08) } else { PANEL2 }).corner_radius(CornerRadius::same(3)).inner_margin(egui::Margin::same(3));
                 frame.show(ui, |ui| ui.vertical(|ui| {
                     ui.set_width(sw - 6.0);
                     ui.spacing_mut().item_spacing = vec2(2.0, 3.0);
                     ui.vertical_centered(|ui| {
                         let (r, resp) = ui.allocate_exact_size(vec2(sw - 6.0, 30.0), Sense::click());
                         let pp = ui.painter();
-                        pp.text(pos2(r.center().x, r.top() + 1.0), Align2::CENTER_TOP, format!("{}", i + 1), font(11.0), if sel { ZYN } else if en { TEXT } else { FAINT });
+                        pp.text(pos2(r.center().x, r.top() + 1.0), Align2::CENTER_TOP, format!("{}", i + 1), font(11.0), if en { hue } else { FAINT });
                         let nm = if part.name.is_empty() { "-".to_string() } else { part.name.clone() };
                         let nm: String = if nm.chars().count() > 10 { nm.chars().take(9).collect::<String>() + "…" } else { nm };
                         pp.text(pos2(r.center().x, r.bottom() - 1.0), Align2::CENTER_BOTTOM, nm, font(8.0), if en { DIM } else { FAINT });
@@ -1190,32 +1212,31 @@ pub fn master_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiStat
                             st.kit = 0;
                         }
                         let mut e = part.enabled;
-                        if button(ui, if e { "ON" } else { "OFF" }, e, c, vec2(sw - 12.0, 16.0)).clicked() {
+                        if button(ui, if e { "ON" } else { "OFF" }, e, hue, vec2(sw - 12.0, 16.0)).clicked() {
                             e = !e;
                             part.enabled = e;
                             ch = true;
                         }
-                        ch |= knobf(ui, "Volume", &mut part.volume, -40.0, 13.333, 0.0, &|v| format!("{v:+.0}"), if en { c } else { FAINT });
-                        ch |= knob(ui, "Pan", &mut part.panning, 64, if en { c } else { FAINT });
+                        ch |= knobf(ui, "Volume", &mut part.volume, -40.0, 13.333, 0.0, &|v| format!("{v:+.0}"), kc);
+                        ch |= knob(ui, "Pan", &mut part.panning, 64, kc);
                         let mut chn = part.rcvchn + 1;
-                        if knob_range(ui, "MIDI Ch", &mut chn, 1, 16, 1, if en { c } else { FAINT }) {
+                        if knob_range(ui, "MIDI Ch", &mut chn, 1, 16, 1, kc) {
                             part.rcvchn = chn - 1;
                             ch = true;
                         }
                         let lvl_l = sh.part_peak[i * 2].get();
                         let lvl_r = sh.part_peak[i * 2 + 1].get();
-                        let (mr, _) = ui.allocate_exact_size(vec2(sw - 12.0, 9.0), Sense::hover());
-                        let half = Rect::from_min_size(mr.min, vec2(mr.width(), 4.0));
-                        hbar(ui.painter(), half, lvl_l);
-                        hbar(ui.painter(), half.translate(vec2(0.0, 5.0)), lvl_r);
+                        let (mr, _) = ui.allocate_exact_size(vec2(22.0, 64.0), Sense::hover());
+                        meter(ui, mr, lvl_l, lvl_r);
                         let notes = sh.part_notes[i].load(std::sync::atomic::Ordering::Relaxed);
                         ui.label(egui::RichText::new(format!("{notes} notes")).size(7.5).color(if notes > 0 { METER_LO } else { FAINT }));
                     });
                     ui.add_space(2.0);
                     let (r, _) = ui.allocate_exact_size(vec2(sw - 6.0, 10.0), Sense::hover());
                     ui.painter().text(r.center(), Align2::CENTER_CENTER, "SENDS", font(7.0), FAINT);
+                    ui.spacing_mut().item_spacing.y = 5.0;
                     for s in 0..NUM_SYS_EFX {
-                        let col = if p.sysefx[s].kind == 0 { FAINT } else { FX };
+                        let col = fx_color(p.sysefx[s].kind);
                         ch |= mini_slider(ui, &format!("S{}", s + 1), &mut p.sysefxvol[s][i], sw - 12.0, col);
                     }
                 }));
@@ -1232,6 +1253,3 @@ pub fn master_page(ui: &mut Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiStat
         sh.edit(|q| *q = p);
     }
 }
-
-#[allow(dead_code)]
-fn _unused(_: Color32, _: Rect) {}

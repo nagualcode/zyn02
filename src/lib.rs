@@ -254,7 +254,7 @@ impl PluginLogic for Zyn {
                 }
             }
         }
-        // Virtual keyboard from the editor.
+        // Events from the editor (panic).
         if let Ok(mut q) = state.shared.gui_events.try_lock() {
             for ev in q.drain(..) {
                 eng.event(ev);
@@ -317,10 +317,6 @@ impl PluginLogic for Zyn {
                 sh.part_peak[i * 2].max(p[0]);
                 sh.part_peak[i * 2 + 1].max(p[1]);
                 sh.part_notes[i].store(eng.active_notes(i) as u32, Ordering::Relaxed);
-            }
-            let pr = eng.part_rt(sh.selected_part.load(Ordering::Relaxed) as usize % NUM_MIDI_PARTS);
-            for k in 0..128 {
-                sh.keys[k].store(pr.active_notes[k], Ordering::Relaxed);
             }
         }
         ProcessStatus::Normal

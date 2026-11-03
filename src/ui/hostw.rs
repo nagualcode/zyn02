@@ -181,7 +181,7 @@ pub fn knob(ui: &mut egui::Ui, state: &Ctx, cell: Rect, id: impl Into<u32>, labe
     let resp = ui.interact(cell, ui.id().with(("knob", id)), Sense::click_and_drag());
     let v = drive(ui, state, &resp, id, 160.0, false);
     let text = state.format_param(id);
-    crate::ui::w::draw_knob(ui, cell, &resp, label, v, m.bipolar, &text, color);
+    crate::ui::w::draw_knob(ui, cell, &resp, label, v, m.bipolar, &text, color, (v - m.default_norm).abs() > 0.004);
 }
 
 pub fn button_face(p: &egui::Painter, rect: Rect, on: bool, hovered: bool, text: &str, size: f32, color: Color32) {

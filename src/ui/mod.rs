@@ -8,7 +8,13 @@
 //!   plus the voice and kit selectors of the current page.
 //! - Main area: the page, laid out on a fixed grid so it needs no
 //!   scrolling; the bank browser opens over it.
-//! - Bottom: host performance controls and a playable keyboard.
+//! - Bottom: host performance controls by function, output meter.
+//!
+//! Colour carries meaning. Engines have a colour (ADD orange, SUB cyan, PAD
+//! violet) and so does each job, on every page: amplitude coral, frequency
+//! blue, filter green, modulation pink, with LFOs a lighter shade of their
+//! section. Parts and effect types each have their own hue too, and a knob
+//! at its default dims its readout, so edits stand out.
 
 mod hostw;
 mod pages;
@@ -29,15 +35,15 @@ use crate::synth::fft::Fft;
 use crate::synth::master::{Event, NUM_MIDI_PARTS, Patch};
 use hostw::Ctx;
 use w::theme::*;
-use w::{action, button_face, font, meter};
+use w::{action, button_face, font};
 
 pub const WIDTH: u32 = 1140;
-pub const HEIGHT: u32 = 610;
+pub const HEIGHT: u32 = 602;
 
 const MARGIN: f32 = 8.0;
 const HEAD_H: f32 = 40.0;
 const NAV_H: f32 = 24.0;
-const BOT_H: f32 = 62.0;
+const BOT_H: f32 = 54.0;
 
 thread_local! {
     static FFT: RefCell<Fft> = RefCell::new(Fft::new(crate::state::OSCILSIZE));
@@ -73,8 +79,6 @@ pub struct UiState {
     pub current: Option<(usize, usize)>,
     pub filter: String,
     pub pad_rebuild: Option<(usize, usize)>,
-    pub octave: i32,
-    pub held: Option<u8>,
     /// Tab of the right-hand panel on the voice and PAD pages.
     pub tab: usize,
     /// Oscillator panel: false = carrier, true = modulator.
@@ -94,8 +98,6 @@ impl Default for UiState {
             current: None,
             filter: String::new(),
             pad_rebuild: None,
-            octave: 4,
-            held: None,
             tab: 0,
             mod_osc: false,
             fx: (0, 0),
@@ -151,9 +153,9 @@ fn draw(ui: &mut egui::Ui, s: &Ctx) {
     let start = START.lock().ok().and_then(|g| g.clone());
     let mut st: UiState = ui.data_mut(|d| d.get_temp_mut_or_insert_with::<UiState>(sid, || start.unwrap_or_default()).clone());
     let full = ui.max_rect();
-    ui.painter().rect_filled(full, CornerRadius::ZERO, BG);
+    let accent = page_color(&st);
+    ui.painter().rect_filled(full, CornerRadius::ZERO, mix(BG, accent, 0.03));
     let patch = sh.patch();
-    sh.selected_part.store(st.part as u32, Ordering::Relaxed);
     {
         let k = &patch.parts[st.part].kit;
         if st.kit >= k.len() {
@@ -164,17 +166,15 @@ fn draw(ui: &mut egui::Ui, s: &Ctx) {
     // ---- header ----
     let head = Rect::from_min_size(full.min, vec2(full.width(), HEAD_H));
     ui.painter().rect_filled(head, CornerRadius::ZERO, PANEL);
-    ui.painter().line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.0_f32, LINE));
+    ui.painter().line_segment([head.left_bottom(), head.right_bottom()], Stroke::new(1.5_f32, accent));
     let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(head.shrink2(vec2(10.0, 7.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    header(&mut hui, &sh, &patch, &mut st, s);
+    header(&mut hui, &sh, &patch, &mut st);
 
     // ---- bottom strip ----
     let bottom = Rect::from_min_max(pos2(full.left(), full.bottom() - BOT_H), full.max);
     ui.painter().rect_filled(bottom, CornerRadius::ZERO, PANEL);
     ui.painter().line_segment([bottom.left_top(), bottom.right_top()], Stroke::new(1.0_f32, LINE));
-    let perf = Rect::from_min_size(bottom.min + vec2(MARGIN, 9.0), vec2(470.0, 44.0));
-    perf_strip(ui, s, perf);
-    keyboard(ui, &sh, &patch, &mut st, Rect::from_min_max(pos2(perf.right() + 12.0, bottom.top() + 8.0), pos2(bottom.right() - MARGIN, bottom.bottom() - 8.0)));
+    perf_strip(ui, &sh, s, bottom.shrink2(vec2(MARGIN, 4.0)));
 
     // ---- navigation ----
     let nav = Rect::from_min_size(pos2(full.left() + MARGIN, head.bottom() + 6.0), vec2(full.width() - 2.0 * MARGIN, NAV_H));
@@ -214,11 +214,24 @@ fn draw(ui: &mut egui::Ui, s: &Ctx) {
     ui.ctx().request_repaint();
 }
 
+/// The colour of what is on screen.
+fn page_color(st: &UiState) -> Color32 {
+    match st.page {
+        _ if st.browse => ZYN,
+        Page::Part => part_color(st.part),
+        Page::Add => ADD,
+        Page::Sub => SUB,
+        Page::Pad => PAD,
+        Page::Fx => FX,
+        Page::Master => MIX,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Header
 // ---------------------------------------------------------------------------
 
-fn header(ui: &mut egui::Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState, s: &Ctx) {
+fn header(ui: &mut egui::Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) {
     ui.spacing_mut().item_spacing.x = 4.0;
     let (r, _) = ui.allocate_exact_size(vec2(84.0, 26.0), Sense::hover());
     let p = ui.painter();
@@ -268,9 +281,10 @@ fn header(ui: &mut egui::Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState, 
         let en = patch.parts[i].enabled;
         let (rect, resp) = ui.allocate_exact_size(vec2(20.0, 26.0), Sense::click());
         let sel = st.part == i;
-        let fill = if sel { ZYN } else if resp.hovered() { CONTROL_HOVER } else if en { CONTROL } else { PANEL2 };
+        let hue = part_color(i);
+        let fill = if sel { hue } else if resp.hovered() { CONTROL_HOVER } else if en { mix(CONTROL, hue, 0.3) } else { PANEL2 };
         ui.painter().rect_filled(rect, CornerRadius::same(3), fill);
-        ui.painter().text(rect.center() - vec2(0.0, 3.0), Align2::CENTER_CENTER, format!("{}", i + 1), font(9.0), if sel { ON_TEXT } else if en { TEXT } else { FAINT });
+        ui.painter().text(rect.center() - vec2(0.0, 3.0), Align2::CENTER_CENTER, format!("{}", i + 1), font(9.0), if sel { ON_TEXT } else if en { mix(TEXT, hue, 0.5) } else { FAINT });
         let lvl = sh.part_peak[i * 2].get().max(sh.part_peak[i * 2 + 1].get());
         let led = if lvl > 0.001 { METER_LO } else if en { if sel { ON_TEXT.gamma_multiply(0.5) } else { FAINT } } else { TRACK };
         ui.painter().rect_filled(Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 4.5), vec2(8.0, 2.5)), CornerRadius::same(1), led);
@@ -289,9 +303,6 @@ fn header(ui: &mut egui::Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState, 
 
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        let (mr, _) = ui.allocate_exact_size(vec2(12.0, 26.0), Sense::hover());
-        meter(ui, mr, s.get_meter(P::MeterL), s.get_meter(P::MeterR));
-        ui.add_space(4.0);
         if action(ui, "PANIC", METER_HI, vec2(44.0, 22.0)).clicked() {
             sh.push_gui_event(Event::AllSoundOff);
         }
@@ -371,7 +382,7 @@ fn nav_row(ui: &mut egui::Ui, patch: &Patch, st: &mut UiState) {
     let kit = &part.kit[st.kit];
     ui.spacing_mut().item_spacing.x = 2.0;
     let items: [(Page, &str, Color32, Option<bool>); 6] = [
-        (Page::Part, "PART", ZYN, None),
+        (Page::Part, "PART", part_color(st.part), None),
         (Page::Add, "ADD", ADD, Some(kit.ad_enabled)),
         (Page::Sub, "SUB", SUB, Some(kit.sub_enabled)),
         (Page::Pad, "PAD", PAD, Some(kit.pad_enabled)),
@@ -385,8 +396,9 @@ fn nav_row(ui: &mut egui::Ui, patch: &Patch, st: &mut UiState) {
         let resp = ui.interact(r, ui.id().with(("tab", i)), Sense::click());
         let on = st.page == pg && !st.browse;
         let p = ui.painter();
-        p.rect_filled(r, CornerRadius::same(3), if on { col } else if resp.hovered() { CONTROL } else { PANEL });
-        let tc = if on { ON_TEXT } else { TEXT };
+        let live = en.unwrap_or(true);
+        p.rect_filled(r, CornerRadius::same(3), if on { col } else if resp.hovered() { CONTROL } else if live { mix(PANEL, col, 0.12) } else { PANEL });
+        let tc = if on { ON_TEXT } else { mix(TEXT, col, 0.6) };
         match en {
             Some(e) => {
                 p.text(pos2(r.center().x + 4.0, r.center().y), Align2::CENTER_CENTER, name, font(9.5), if e || on { tc } else { FAINT });
@@ -452,7 +464,7 @@ fn nav_row(ui: &mut egui::Ui, patch: &Patch, st: &mut UiState) {
         if st.page == Page::Add && st.voice != usize::MAX {
             crumb += &format!("  ·  VOICE {}", st.voice + 1);
         }
-        ui.label(egui::RichText::new(crumb).size(9.0).color(DIM));
+        ui.label(egui::RichText::new(crumb).size(9.0).color(part_color(st.part)));
     });
 }
 
@@ -632,90 +644,52 @@ fn load_entry(sh: &Arc<Shared>, st: &mut UiState, bank: usize, item: usize) {
 // Bottom strip
 // ---------------------------------------------------------------------------
 
-fn perf_strip(ui: &mut egui::Ui, s: &Ctx, rect: Rect) {
-    let ids = [
-        (P::Cutoff, "Cutoff"),
-        (P::Q, "Reso"),
-        (P::Bandwidth, "Bandw"),
-        (P::Modwheel, "Mod"),
-        (P::Fmamp, "FM Amt"),
-        (P::ResCenter, "Res.Ctr"),
-        (P::ResBw, "Res.BW"),
-        (P::Expression, "Expr"),
-        (P::Pan, "Pan"),
-        (P::Output, "Output"),
-    ];
-    let w = 38.0;
-    for (i, (id, label)) in ids.into_iter().enumerate() {
-        let cell = Rect::from_min_size(rect.min + vec2(i as f32 * w, 2.0), vec2(w, w::KH));
-        hostw::knob(ui, s, cell, id, label, ZYN);
-    }
-    let t = Rect::from_min_size(pos2(rect.left() + 10.0 * w + 6.0, rect.top() + 14.0), vec2(80.0, 18.0));
-    hostw::toggle(ui, s, t, P::Portamento, "PORTAMENTO", ZYN);
+/// A labelled group of the strip: tinted, with a vertical tag.
+fn strip_group(ui: &egui::Ui, rect: Rect, tag: &str, c: Color32) {
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(3), mix(PANEL2, c, 0.1));
+    p.rect_filled(Rect::from_min_size(rect.min, vec2(2.0, rect.height())), CornerRadius::same(1), c);
+    let g = p.layout_no_wrap(tag.to_string(), font(7.5), mix(DIM, c, 0.7));
+    let pos = pos2(rect.left() + 4.0, rect.center().y + g.size().x * 0.5);
+    p.add(egui::epaint::TextShape::new(pos, g, mix(DIM, c, 0.7)).with_angle(-std::f32::consts::FRAC_PI_2));
 }
 
-fn keyboard(ui: &mut egui::Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState, rect: Rect) {
-    let ch = patch.parts[st.part].rcvchn;
-    let ctrl = Rect::from_min_size(rect.min, vec2(30.0, rect.height()));
-    let kb = Rect::from_min_max(pos2(rect.left() + 36.0, rect.top()), rect.max);
-    let up = Rect::from_min_size(ctrl.min, vec2(30.0, 14.0));
-    let dn = Rect::from_min_size(pos2(ctrl.left(), ctrl.bottom() - 14.0), vec2(30.0, 14.0));
-    for (r, d, t) in [(up, 1, "OCT+"), (dn, -1, "OCT-")] {
-        let resp = ui.interact(r, ui.id().with(t), Sense::click());
-        button_face(ui.painter(), r, false, resp.hovered(), t, 8.0, ZYN);
-        if resp.clicked() {
-            st.octave = (st.octave + d).clamp(0, 8);
+fn perf_strip(ui: &mut egui::Ui, sh: &Arc<Shared>, s: &Ctx, rect: Rect) {
+    const TAG: f32 = 16.0;
+    const GAP: f32 = 6.0;
+    const W: f32 = 44.0;
+    let groups: [(&str, Color32, &[(P, &str)]); 4] = [
+        ("FILTER", FLT, &[(P::Cutoff, "Cutoff"), (P::Q, "Reso")]),
+        ("MOD", MODC, &[(P::Bandwidth, "Bandw"), (P::Modwheel, "Mod"), (P::Fmamp, "FM Amt")]),
+        ("RES", RES, &[(P::ResCenter, "Res.Ctr"), (P::ResBw, "Res.BW")]),
+        ("AMP", AMP, &[(P::Expression, "Expr"), (P::Pan, "Pan")]),
+    ];
+    let mut x = rect.left();
+    for (tag, c, knobs) in groups {
+        let g = Rect::from_min_size(pos2(x, rect.top()), vec2(TAG + knobs.len() as f32 * W, rect.height()));
+        strip_group(ui, g, tag, c);
+        for (i, (id, label)) in knobs.iter().enumerate() {
+            let cell = Rect::from_min_size(pos2(g.left() + TAG + i as f32 * W + (W - w::KW) * 0.5, g.top() + 3.0), vec2(w::KW, w::KH));
+            hostw::knob(ui, s, cell, *id, label, c);
         }
+        x = g.right() + GAP;
     }
-    ui.painter().text(ctrl.center(), Align2::CENTER_CENTER, format!("C{}", st.octave - 1), font(9.0), DIM);
-    let ww_target = 13.0;
-    let nwhite = ((kb.width() / ww_target) as usize / 7).max(2) * 7;
-    let octaves = nwhite / 7;
-    let base = (st.octave * 12) as u8;
-    let ww = kb.width() / nwhite as f32;
-    let resp = ui.interact(kb, ui.id().with("kb"), Sense::click_and_drag());
-    let white_off = [0, 2, 4, 5, 7, 9, 11];
-    let black: [(usize, u8); 5] = [(0, 1), (1, 3), (3, 6), (4, 8), (5, 10)];
-    let p = ui.painter();
-    let mut hit: Option<u8> = None;
-    let pos = resp.interact_pointer_pos();
-    let mut black_rects = Vec::new();
-    for o in 0..octaves {
-        for (wi, off) in black {
-            let x = kb.left() + (o * 7 + wi + 1) as f32 * ww;
-            let r = Rect::from_min_size(pos2(x - ww * 0.32, kb.top()), vec2(ww * 0.64, kb.height() * 0.6));
-            black_rects.push((r, (base as usize + o * 12 + off as usize).min(127) as u8));
-        }
-    }
-    if let Some(pp) = pos {
-        if resp.is_pointer_button_down_on() {
-            hit = black_rects.iter().find(|(r, _)| r.contains(pp)).map(|x| x.1);
-            if hit.is_none() && kb.contains(pp) {
-                let wi = ((pp.x - kb.left()) / ww) as usize;
-                hit = Some((base as usize + wi / 7 * 12 + white_off[wi % 7] as usize).min(127) as u8);
-            }
-        }
-    }
-    for wi in 0..nwhite {
-        let note = (base as usize + wi / 7 * 12 + white_off[wi % 7] as usize).min(127);
-        let r = Rect::from_min_size(pos2(kb.left() + wi as f32 * ww, kb.top()), vec2(ww - 1.0, kb.height()));
-        let on = sh.keys[note].load(Ordering::Relaxed);
-        p.rect_filled(r, CornerRadius { nw: 0, ne: 0, sw: 2, se: 2 }, if on { ZYN } else { Color32::from_rgb(0xd4, 0xd4, 0xd0) });
-        if wi % 7 == 0 {
-            p.text(pos2(r.center().x, r.bottom() - 6.0), Align2::CENTER_CENTER, format!("C{}", (note / 12) as i32 - 1), font(7.0), FAINT);
-        }
-    }
-    for (r, note) in black_rects {
-        let on = sh.keys[note as usize & 127].load(Ordering::Relaxed);
-        p.rect_filled(r, CornerRadius { nw: 0, ne: 0, sw: 2, se: 2 }, if on { ZYN } else { Color32::from_rgb(0x1e, 0x1e, 0x20) });
-    }
-    if hit != st.held {
-        if let Some(n) = st.held {
-            sh.push_gui_event(Event::NoteOff { ch, note: n });
-        }
-        if let Some(n) = hit {
-            sh.push_gui_event(Event::NoteOn { ch, note: n, vel: 100 });
-        }
-        st.held = hit;
-    }
+
+    let g = Rect::from_min_size(pos2(x, rect.top()), vec2(92.0, rect.height()));
+    strip_group(ui, g, "GLIDE", FRQ);
+    let t = Rect::from_center_size(pos2(g.center().x + 6.0, g.center().y), vec2(70.0, 18.0));
+    hostw::toggle(ui, s, t, P::Portamento, "PORTAMENTO", FRQ);
+    x = g.right() + GAP;
+
+    // output: level knob, wide stereo meter, sounding notes
+    let g = Rect::from_min_max(pos2(x, rect.top()), rect.right_bottom());
+    strip_group(ui, g, "OUT", MIX);
+    let cell = Rect::from_min_size(pos2(g.left() + TAG + (W - w::KW) * 0.5, g.top() + 3.0), vec2(w::KW, w::KH));
+    hostw::knob(ui, s, cell, P::Output, "Output", MIX);
+    let notes: u32 = sh.part_notes.iter().map(|n| n.load(Ordering::Relaxed)).sum();
+    let txt = Rect::from_min_max(pos2(g.right() - 58.0, g.top()), g.right_bottom());
+    ui.painter().text(pos2(txt.right() - 6.0, txt.center().y), Align2::RIGHT_CENTER, format!("{notes} notes"), font(9.0), if notes > 0 { MIX } else { FAINT });
+    let m = Rect::from_min_max(pos2(g.left() + TAG + W + 4.0, g.center().y - 8.0), pos2(txt.left() - 4.0, g.center().y + 8.0));
+    w::hbar(ui.painter(), Rect::from_min_size(m.min, vec2(m.width(), 7.5)), s.get_meter(P::MeterL));
+    w::hbar(ui.painter(), Rect::from_min_size(pos2(m.left(), m.bottom() - 7.5), vec2(m.width(), 7.5)), s.get_meter(P::MeterR));
 }

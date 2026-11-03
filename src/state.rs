@@ -70,9 +70,7 @@ pub struct Shared {
     pub master_peak: [AtomicF32; 2],
     pub part_peak: Vec<AtomicF32>,
     pub part_notes: Vec<AtomicU32>,
-    pub keys: Vec<AtomicBool>,
     /// Part shown in the editor.
-    pub selected_part: AtomicU32,
     pub publish_pending: AtomicBool,
     publish_queued: AtomicBool,
 }
@@ -96,8 +94,6 @@ impl Default for Shared {
             master_peak: [AtomicF32::default(), AtomicF32::default()],
             part_peak: (0..NUM_MIDI_PARTS * 2).map(|_| AtomicF32::default()).collect(),
             part_notes: (0..NUM_MIDI_PARTS).map(|_| AtomicU32::new(0)).collect(),
-            keys: (0..128).map(|_| AtomicBool::new(false)).collect(),
-            selected_part: AtomicU32::new(0),
             publish_pending: AtomicBool::new(false),
             publish_queued: AtomicBool::new(false),
         }

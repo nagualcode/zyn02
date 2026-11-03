@@ -93,12 +93,12 @@ before 3.0.6), the pre-3.0.7 pan law.
 
 ## The editor
 
-A compact, flat editor (1140 × 610) where every control sits on the same
+A compact, flat editor (1140 × 602) where every control sits on the same
 grid, so all pages fit without scrolling.
 
 - **Header**: preset browser (bank and instrument name, ◀ ▶ to step through
   the bank), the 16 parts (click to edit, double-click to switch a part
-  on/off, the bar lights with activity), load/save, panic, output meter.
+  on/off, the bar lights with activity), load/save, panic.
 - **Navigation**: PART · ADD · SUB · PAD · EFFECTS · MIXER, colour-coded
   per engine like Zyn's own editor (ADDsynth orange, SUBsynth cyan,
   PADsynth violet). The dot shows which engines the kit item uses. The ADD
@@ -122,7 +122,16 @@ grid, so all pages fit without scrolling.
   the editor for the selected slot, with every part's send) ·
   **MIXER** (master volume, tuning, a strip per part with on/off, volume,
   pan, MIDI channel, level and system-effect sends).
-- **Bottom**: the host-automatable controls and a playable keyboard.
+- **Bottom**: the host-automatable controls, grouped by function, and the
+  output meter with the count of sounding notes. Play from your DAW or a
+  MIDI keyboard; the editor has no on-screen keyboard.
+
+Colour carries meaning. Engines keep their colours, and each job has the
+same colour on every page: amplitude coral, frequency blue, filter green,
+modulation pink, with LFOs a lighter shade of their section. Each of the 16
+parts has its own hue (part buttons, mixer strips, send knobs), and so does
+each effect type (rack, editor, mixer sends). A knob at its default dims its
+readout, so what shapes a patch stands out.
 
 Knobs: drag up/down, Shift for fine, double-click for default, wheel to
 nudge. Envelope graphs: drag the points. Bars: drag to paint, right-click
