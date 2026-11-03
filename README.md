@@ -93,22 +93,67 @@ before 3.0.6), the pre-3.0.7 pan law.
 
 ## The editor
 
-- **Header**: the 16 parts (click to edit, double-click to switch a part
-  on/off, the dot lights with activity), load/save, panic, output meter.
-- **Banks** (left): all 1318 instruments shipped with ZynAddSubFX plus its
-  example setups, embedded in the plugin, with search. A click loads the
-  instrument into the selected part.
-- **Pages**, colour-coded like Zyn's own editor:
-  **PART** (mode, volume, keys, MIDI channel, controllers, kit table) ·
-  **ADDsynth** orange (global + 8 voices, oscillator designer with live
-  waveform and spectrum, modulator, envelopes drawn and draggable) ·
-  **SUBsynth** blue (harmonic and bandwidth bars) ·
-  **PADsynth** violet (profile, bandwidth, quality; tables rebuild when you
-  release the mouse) · **EFFECTS** · **MASTER** (volume, transpose, tuning).
+A compact, flat editor (1140 × 610) where every control sits on the same
+grid, so all pages fit without scrolling.
+
+- **Header**: preset browser (bank and instrument name, ◀ ▶ to step through
+  the bank), the 16 parts (click to edit, double-click to switch a part
+  on/off, the bar lights with activity), load/save, panic, output meter.
+- **Navigation**: PART · ADD · SUB · PAD · EFFECTS · MIXER, colour-coded
+  per engine like Zyn's own editor (ADDsynth orange, SUBsynth cyan,
+  PADsynth violet). The dot shows which engines the kit item uses. The ADD
+  voice selector (with dots on active voices) and the kit selector are
+  on the same row.
+- **Browser** (click the preset box): every bank in a grid, the community
+  banks first, plus a search across all banks. A click loads into the
+  selected part.
+- **Pages**:
+  **PART** (mode, volume, keys, MIDI channel, controllers, instrument
+  info, kit table) ·
+  **ADD** global (amplitude / frequency / filter, each with its envelope
+  and LFO, an overview card per voice with its waveform, resonance) and
+  per voice (voice, unison and pitch in one row, oscillator designer with
+  carrier/modulator tabs, modulation tabs) ·
+  **SUB** (harmonic and bandwidth bars, amplitude, bandwidth & frequency,
+  filter) ·
+  **PAD** (profile, spectrum, oscillator, tabbed amplitude / frequency /
+  filter; tables rebuild when you release the mouse) ·
+  **EFFECTS** (a rack of the 3 part, 4 system and 8 insertion slots next to
+  the editor for the selected slot, with every part's send) ·
+  **MIXER** (master volume, tuning, a strip per part with on/off, volume,
+  pan, MIDI channel, level and system-effect sends).
 - **Bottom**: the host-automatable controls and a playable keyboard.
 
 Knobs: drag up/down, Shift for fine, double-click for default, wheel to
-nudge. Bars: drag to paint, right-click to reset a bar.
+nudge. Envelope graphs: drag the points. Bars: drag to paint, right-click
+to reset a bar.
+
+| | |
+|---|---|
+| ![ADD voice](screenshots/voice.png) | ![Browser](screenshots/browser.png) |
+| ![Effects](screenshots/fx.png) | ![Mixer](screenshots/mixer.png) |
+
+## Community presets
+
+On top of the 1318 ZynAddSubFX instruments, Zyn02 bundles **199 community
+patches**, mostly well-known classic sounds, in six banks listed first in
+the browser:
+
+| Bank | Patches | Source | License |
+|---|---|---|---|
+| Classic Bass | 35 | TB acid bass, techno / house / club basses, Italo-disco basses, sub bass | CC0 |
+| Classic Leads & Synths | 31 | super saws, 1984 synth, punch lead, Italo leads and sequences, synth brass | CC0 |
+| Classic Pads & Strings | 30 | 80s pads, super saw pads, synth strings, matrix and ensemble strings | CC0 |
+| Classic Bells & Voices | 21 | synth bells, crystal, choirs, space voice, solo vox | CC0 |
+| Yoshimi Chip | 49 | chiptune basses, leads and effects (Chip Van Dan) | GPL-2.0+ |
+| Yoshimi Companion II | 33 | B3, theatre and cathedral organs, accordion, cello, Tomita whistle, choirs (Will J. Godfrey) | GPL-2.0+ |
+
+The four *Classic* banks come from Yingchun Soul and the
+[NeoSoundFonts](https://github.com/NeoSoundFonts) project (CC0). The two
+Yoshimi banks come from [Yoshimi](https://github.com/Yoshimi/yoshimi).
+Every patch was rendered with Zyn02 and with the original ZynAddSubFX
+and kept only when both renders have the same level; about half are
+bit-for-bit identical. Full credits: [`banks-community/CREDITS.md`](banks-community/CREDITS.md).
 
 ## Host parameters
 
@@ -172,6 +217,7 @@ cargo run --release --example render -- banks/Pads/0003-Analog\ Pad\ 1.xiz out.w
 | `src/state.rs` | shared patch, loader / PAD builder / state writer thread, banks |
 | `src/ui/` | the editor |
 | `banks/`, `examples-xmz/` | the instrument banks and example setups of ZynAddSubFX |
+| `banks-community/` | community banks (NeoSoundFonts CC0, Yoshimi GPL), see its CREDITS.md |
 
 ## How it was checked
 

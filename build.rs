@@ -1,4 +1,5 @@
-//! Packs the bundled ZynAddSubFX banks (`banks/`) and example setups
+//! Packs the bundled ZynAddSubFX banks (`banks/`), the community banks
+//! (`banks-community/`) and example setups
 //! (`examples-xmz/`) into one blob that the plugin embeds, so the bank
 //! browser works without any install step.
 
@@ -25,8 +26,10 @@ fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, Vec<u8>)>) {
 fn main() {
     println!("cargo:rerun-if-changed=banks");
     println!("cargo:rerun-if-changed=examples-xmz");
+    println!("cargo:rerun-if-changed=banks-community");
     let mut files = Vec::new();
     walk(Path::new("banks"), Path::new("."), &mut files);
+    walk(Path::new("banks-community"), Path::new("."), &mut files);
     walk(Path::new("examples-xmz"), Path::new("."), &mut files);
     let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("banks.bin");
     let mut f = std::fs::File::create(out).unwrap();

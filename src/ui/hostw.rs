@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Vec2, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use truce_core::editor::{PluginContext, PluginContextReadF32};
 use truce_params::Params;
 
@@ -174,42 +174,14 @@ pub fn fader(ui: &mut egui::Ui, state: &Ctx, cell: Rect, id: impl Into<u32>, lab
     p.text(pos2(cell.center().x, cell.bottom()), Align2::CENTER_BOTTOM, text, small(9.0), tcol);
 }
 
-/// Rotary dial.
+/// Rotary dial (compact cell, same look as the patch knobs).
 pub fn knob(ui: &mut egui::Ui, state: &Ctx, cell: Rect, id: impl Into<u32>, label: &str, color: Color32) {
     let id = id.into();
     let m = meta(state, id);
-    let p = ui.painter().clone();
-    p.text(pos2(cell.center().x, cell.top()), Align2::CENTER_TOP, label, small(9.0), DIM);
-
-    let r = 13.0;
-    let c = pos2(cell.center().x, cell.top() + 14.0 + r + 2.0);
-    let hit = Rect::from_center_size(c, Vec2::splat(2.0 * r + 10.0));
-    let resp = ui.interact(hit, ui.id().with(("knob", id)), Sense::click_and_drag());
+    let resp = ui.interact(cell, ui.id().with(("knob", id)), Sense::click_and_drag());
     let v = drive(ui, state, &resp, id, 160.0, false);
-
-    const START: f32 = std::f32::consts::FRAC_PI_4 * 3.0;
-    const SWEEP: f32 = std::f32::consts::FRAC_PI_2 * 3.0;
-    let arc = |from: f32, to: f32| -> Vec<Pos2> {
-        let n = 40;
-        (0..=n)
-            .map(|i| {
-                let a = START + SWEEP * (from + (to - from) * i as f32 / n as f32);
-                c + vec2(a.cos(), a.sin()) * r
-            })
-            .collect()
-    };
-    p.add(Shape::line(arc(0.0, 1.0), Stroke::new(3.0_f32, TRACK)));
-    let base = if m.bipolar { 0.5 } else { 0.0 };
-    if (v - base).abs() > 0.002 {
-        p.add(Shape::line(arc(base.min(v), base.max(v)), Stroke::new(3.0_f32, color)));
-    }
-    let active = resp.hovered() || resp.dragged();
-    let a = START + SWEEP * v;
-    p.circle_filled(c, r - 5.0, if active { CONTROL_HOVER } else { CONTROL });
-    p.line_segment([c + vec2(a.cos(), a.sin()) * 3.0, c + vec2(a.cos(), a.sin()) * (r - 4.0)], Stroke::new(2.0_f32, TEXT));
-
     let text = state.format_param(id);
-    p.text(pos2(cell.center().x, cell.bottom()), Align2::CENTER_BOTTOM, text, small(9.0), if active { color } else { TEXT });
+    crate::ui::w::draw_knob(ui, cell, &resp, label, v, m.bipolar, &text, color);
 }
 
 pub fn button_face(p: &egui::Painter, rect: Rect, on: bool, hovered: bool, text: &str, size: f32, color: Color32) {

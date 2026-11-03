@@ -353,14 +353,22 @@ pub struct BankEntry {
     pub data: &'static [u8],
 }
 
-/// Bank name -> instruments (sorted), from the embedded blob.
-pub fn banks() -> &'static BTreeMap<String, Vec<BankEntry>> {
-    static B: OnceLock<BTreeMap<String, Vec<BankEntry>>> = OnceLock::new();
+pub struct Bank {
+    pub name: String,
+    /// Banks contributed by the community (`banks-community/`), listed first.
+    pub community: bool,
+    pub items: Vec<BankEntry>,
+}
+
+/// All embedded banks: community banks first, then the ZynAddSubFX
+/// factory banks, then the example setups; each group sorted by name.
+pub fn banks() -> &'static [Bank] {
+    static B: OnceLock<Vec<Bank>> = OnceLock::new();
     B.get_or_init(|| {
-        let mut m: BTreeMap<String, Vec<BankEntry>> = BTreeMap::new();
+        let mut m: BTreeMap<(u8, String), Vec<BankEntry>> = BTreeMap::new();
         let b = BANK_BLOB;
         if b.len() < 4 {
-            return m;
+            return Vec::new();
         }
         let n = u32::from_le_bytes(b[0..4].try_into().unwrap()) as usize;
         let mut i = 4;
@@ -375,17 +383,19 @@ pub fn banks() -> &'static BTreeMap<String, Vec<BankEntry>> {
             i += dl;
             let mut parts = name.split('/');
             let top = parts.next().unwrap_or("");
-            let (bank, file) = if top == "banks" {
-                (parts.next().unwrap_or("").to_string(), parts.collect::<Vec<_>>().join("/"))
-            } else {
-                ("Example Setups".to_string(), parts.collect::<Vec<_>>().join("/"))
+            let (group, bank, file) = match top {
+                "banks-community" => (0u8, parts.next().unwrap_or("").to_string(), parts.collect::<Vec<_>>().join("/")),
+                "banks" => (1u8, parts.next().unwrap_or("").to_string(), parts.collect::<Vec<_>>().join("/")),
+                _ => (2u8, EXAMPLE_SETUPS.to_string(), parts.collect::<Vec<_>>().join("/")),
             };
             let pretty = pretty_name(&file);
-            m.entry(bank).or_default().push(BankEntry { name: pretty, data });
+            m.entry((group, bank)).or_default().push(BankEntry { name: pretty, data });
         }
-        m
+        m.into_iter().map(|((g, name), items)| Bank { name, community: g == 0, items }).collect()
     })
 }
+
+pub const EXAMPLE_SETUPS: &str = "Example Setups";
 
 /// "0042-Soft Arpeggio4.xiz" -> "Soft Arpeggio4".
 pub fn pretty_name(file: &str) -> String {

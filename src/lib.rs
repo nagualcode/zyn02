@@ -16,7 +16,8 @@ use truce::prelude::*;
 
 pub mod state;
 pub mod synth;
-mod ui;
+#[doc(hidden)]
+pub mod ui;
 
 use state::Shared;
 use synth::master::{Engine, Event, NUM_MIDI_PARTS, Patch};

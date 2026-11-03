@@ -21,8 +21,9 @@ fn render(p: Patch) -> Vec<f32> {
 #[test]
 fn xml_roundtrip_renders_identically() {
     let mut n = 0;
-    for (bank, items) in banks().iter() {
-        for it in items.iter().step_by(9) {
+    for b in banks().iter() {
+        let bank = &b.name;
+        for it in b.items.iter().step_by(9) {
             let a = Patch::from_bytes(it.data, 1024).unwrap_or_else(|e| panic!("{bank}/{}: {e}", it.name));
             if a.parts.iter().any(|p| p.kit.iter().any(|k| k.pad_enabled)) {
                 continue; // random-phase wavetables
