@@ -234,6 +234,30 @@ Engine timing follows Zyn's plugin builds: audio is computed in blocks of
 the engine buffer (256 samples by default, selectable), and MIDI lands on
 block boundaries.
 
+## Roadmap
+
+Fidelity
+- [ ] Some old Yoshimi-saved patches (file version 2.0, e.g. Will Godfrey's
+  "Ghost Choir") diverge from the original from the first block, even with
+  one voice and no unison; the parser is not the cause. Seven community
+  patches are left out until this is fixed.
+
+Features from ZynAddSubFX not ported yet
+- [ ] MIDI Program Change / Bank Select
+- [ ] NRPN
+- [ ] `.scl` / `.kbm` scale import and a scale editor on the tuning page
+- [ ] Undo / redo and Zyn's preset clipboard (copy / paste envelopes, LFOs, oscillators)
+- [ ] User banks: save straight into a bank shown in the browser
+- [ ] More host-automatable parameters
+
+Distribution
+- [ ] VST3 and CLAP in the release (today: build from source)
+- [ ] Universal (Intel + Apple Silicon) build; Windows and Linux
+- [ ] Notarized bundle
+
+Editor
+- [ ] Test the 0.2 editor in more DAWs (drop-downs, envelope dragging, scaling)
+
 ## Credits
 
 ZynAddSubFX: Nasca Octavian Paul, Mark McCurry and contributors (GPL-2.0 or
