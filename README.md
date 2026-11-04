@@ -9,6 +9,8 @@
 An Audio Unit, VST3 and CLAP instrument by **Jardim Sonoro**, written in Rust with
 [truce](https://github.com/truce-audio/truce).
 
+[![Build](https://github.com/nagualcode/zyn02/actions/workflows/build.yml/badge.svg)](https://github.com/nagualcode/zyn02/actions/workflows/build.yml)
+
 ![Zyn02](screenshots/main.png)
 
 </div>
@@ -188,16 +190,31 @@ controller above plus sustain (64), all notes off (123), all sounds off
 (120), reset controllers (121). Each part listens to its own MIDI
 channel, as in Zyn.
 
-## Install (macOS, Apple Silicon)
+## Install
 
-1. Download `Zyn02-AU-macOS-arm64.zip` from [Releases](../../releases) and unzip it.
-2. Copy `Zyn02.component` to `~/Library/Audio/Plug-Ins/Components/`
-   (Logic, Ableton Live, GarageBand). VST3 and CLAP build from source.
-3. The bundle is ad-hoc signed, not notarized. Clear the quarantine once:
+Download the zip for your system from [Releases](../../releases) and unzip
+it. Every zip has the plug-ins and `zyn02-standalone`, a desktop app that
+needs no DAW. Builds of every commit are on the
+[Actions](../../actions/workflows/build.yml) page (sign in to GitHub to
+download them).
+
+**macOS (Apple Silicon)**: AU, VST3, CLAP.
+
+1. Copy the bundles to `~/Library/Audio/Plug-Ins/`: `Zyn02.component` into
+   `Components/`, `Zyn02.vst3` into `VST3/`, `Zyn02.clap` into `CLAP/`.
+2. The bundles are ad-hoc signed, not notarized. Clear the quarantine once:
    ```sh
    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Zyn02.component
    ```
-4. Rescan plug-ins in your DAW: *Jardim Sonoro › Zyn02*.
+3. Rescan plug-ins in your DAW: *Jardim Sonoro › Zyn02*.
+
+**Windows (x64)**: VST3, CLAP. Copy `Zyn02.vst3` to
+`C:\Program Files\Common Files\VST3\` and `Zyn02.clap` to
+`C:\Program Files\Common Files\CLAP\`. The build is not code-signed, so
+SmartScreen may warn about the standalone app.
+
+**Linux (x64)**: VST3, CLAP. Copy `Zyn02.vst3` to `~/.vst3/` and
+`Zyn02.clap` to `~/.clap/`.
 
 ## Build from source
 
@@ -260,8 +277,8 @@ Features from ZynAddSubFX not ported yet
 - [ ] More host-automatable parameters
 
 Distribution
-- [ ] VST3 and CLAP in the release (today: build from source)
-- [ ] Universal (Intel + Apple Silicon) build; Windows and Linux
+- [x] VST3 and CLAP builds for macOS, Windows and Linux (GitHub Actions)
+- [ ] Universal (Intel + Apple Silicon) build
 - [ ] Notarized bundle
 
 Editor

@@ -1,0 +1,147 @@
+# Builds and tests Zyn02 on macOS, Windows and Linux.
+#
+# - Every push and pull request: test, then build the plug-in bundles and
+#   the standalone app (downloadable from the run page as artifacts).
+# - Pushing a tag v*: also attaches the zips to the GitHub release for that
+#   tag, creating the release if needed.
+
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_TRUCE_VERSION: 6.3.0
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Apple Silicon)
+            os: macos-14
+            slug: macOS-arm64
+            formats: --au2 --vst3 --clap
+            features: clap,vst3,au,standalone
+            cpu: ""
+          - name: Windows (x64)
+            os: windows-latest
+            slug: Windows-x64
+            formats: --vst3 --clap
+            features: clap,vst3,standalone
+            # x86-64-v2 (SSE4.2) runs on any x64 CPU from ~2009 on;
+            # cargo-truce's default v3 needs AVX2.
+            cpu: --target-cpu v2
+          - name: Linux (x64)
+            # 22.04 (glibc 2.35) so the plug-in also loads on older distros.
+            os: ubuntu-22.04
+            slug: Linux-x64
+            formats: --vst3 --clap
+            features: clap,vst3,standalone
+            cpu: --target-cpu v2
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+          cache-bin: false
+
+      - name: Linux system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev libxcursor-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxrandr-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+            libwayland-dev libasound2-dev libjack-jackd2-dev \
+            libfontconfig1-dev libfreetype-dev libdbus-1-dev
+
+      - name: Test
+        shell: bash
+        run: cargo test --release --no-default-features --features ${{ matrix.features }}
+
+      - name: Build standalone app
+        shell: bash
+        run: cargo build --release --bin zyn02-standalone --no-default-features --features ${{ matrix.features }}
+
+      - name: Install cargo-truce
+        shell: bash
+        run: cargo install cargo-truce --version "$CARGO_TRUCE_VERSION" --locked
+
+      - name: Build bundles
+        shell: bash
+        run: cargo truce build ${{ matrix.formats }} ${{ matrix.cpu }}
+
+      - name: Package
+        id: pkg
+        shell: bash
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          NAME="Zyn02-${VERSION}-${{ matrix.slug }}"
+          mkdir -p "dist/$NAME"
+          for b in target/bundles/Zyn02.*; do cp -R "$b" "dist/$NAME/"; done
+          for s in target/release/zyn02-standalone target/release/zyn02-standalone.exe; do
+            if [ -f "$s" ]; then cp "$s" "dist/$NAME/"; fi
+          done
+          cp LICENSE "dist/$NAME/"
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$NAME.zip" "$NAME" >/dev/null
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            # ditto keeps the bundles' code signatures intact.
+            ditto -c -k --keepParent "$NAME" "$NAME.zip"
+          else
+            zip -qr "$NAME.zip" "$NAME"
+          fi
+          ls -la "$NAME" .
+          echo "zip=dist/$NAME.zip" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.pkg.outputs.name }}
+          path: ${{ steps.pkg.outputs.zip }}
+          if-no-files-found: error
+
+  release:
+    name: Attach to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: zips
+          merge-multiple: true
+
+      - name: Upload zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Zyn02 ${TAG#v}" --generate-notes
+          gh release upload "$TAG" zips/*.zip --clobber

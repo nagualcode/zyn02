@@ -1,0 +1,4 @@
+# Patches are byte-exact data; many are plain XML, so stop Git from
+# converting their line endings on Windows checkouts.
+*.xiz binary
+*.xmz binary
