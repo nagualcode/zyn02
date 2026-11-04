@@ -282,7 +282,7 @@ Distribution
 - [ ] Notarized bundle
 
 Editor
-- [ ] Test the 0.2 editor in more DAWs (drop-downs, envelope dragging, scaling)
+- [ ] Test the 0.3 editor in more DAWs (drop-downs, envelope dragging, scaling)
 
 ## Credits
 
