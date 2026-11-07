@@ -1,6 +1,6 @@
 [package]
 name = "zynabre"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "ZynAddSubFX rebuilt in Rust with truce: ADDsynth, SUBsynth and PADsynth with the original patch format"
