@@ -1,5 +1,5 @@
 [package]
-name = "zyn02"
+name = "zynabre"
 version = "0.3.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
@@ -10,7 +10,7 @@ authors = ["Jardim Sonoro"]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [[bin]]
-name = "zyn02-standalone"
+name = "zynabre-standalone"
 path = "src/main.rs"
 required-features = ["standalone"]
 

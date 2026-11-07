@@ -149,7 +149,7 @@ fn visuals() -> egui::Visuals {
 
 fn draw(ui: &mut egui::Ui, s: &Ctx) {
     let sh: Arc<Shared> = s.params().shared.clone();
-    let sid = egui::Id::new("zyn02-ui");
+    let sid = egui::Id::new("zynabre-ui");
     let start = START.lock().ok().and_then(|g| g.clone());
     let mut st: UiState = ui.data_mut(|d| d.get_temp_mut_or_insert_with::<UiState>(sid, || start.unwrap_or_default()).clone());
     let full = ui.max_rect();
@@ -233,11 +233,11 @@ fn page_color(st: &UiState) -> Color32 {
 
 fn header(ui: &mut egui::Ui, sh: &Arc<Shared>, patch: &Patch, st: &mut UiState) {
     ui.spacing_mut().item_spacing.x = 4.0;
-    let (r, _) = ui.allocate_exact_size(vec2(84.0, 26.0), Sense::hover());
+    let (r, _) = ui.allocate_exact_size(vec2(118.0, 26.0), Sense::hover());
     let p = ui.painter();
     p.rect_filled(Rect::from_min_size(r.min + vec2(0.0, 5.0), vec2(4.0, 16.0)), CornerRadius::same(1), ZYN);
     p.text(pos2(r.left() + 10.0, r.center().y), Align2::LEFT_CENTER, "ZYN", font(19.0), TEXT);
-    p.text(pos2(r.left() + 52.0, r.center().y), Align2::LEFT_CENTER, "02", font(19.0), ZYN);
+    p.text(pos2(r.left() + 52.0, r.center().y), Align2::LEFT_CENTER, "ABRE", font(19.0), ZYN);
     ui.add_space(6.0);
 
     // preset box

@@ -1,6 +1,6 @@
 //! Effect comparison input, mirroring the C++ reference harness.
-use zyn02::synth::effects::EffectMgr;
-use zyn02::synth::util::sprng;
+use zynabre::synth::effects::EffectMgr;
+use zynabre::synth::util::sprng;
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();

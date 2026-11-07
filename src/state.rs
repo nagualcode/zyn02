@@ -167,7 +167,7 @@ impl Shared {
         let (tx, rx) = channel();
         let me = Arc::downgrade(self);
         std::thread::Builder::new()
-            .name("zyn02-worker".into())
+            .name("zynabre-worker".into())
             .spawn(move || worker(me, rx))
             .expect("worker thread");
         *g = Some(tx.clone());

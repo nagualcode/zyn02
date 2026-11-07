@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 use truce_core::export::PluginExport;
 use truce_core::plugin::PluginRuntime as _;
-use zyn02::Plugin;
+use zynabre::Plugin;
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();
@@ -33,7 +33,7 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
         }
-        zyn02::ui::debug_start(*page, *voice, *browse, *bank, *tab, *fx);
+        zynabre::ui::debug_start(*page, *voice, *browse, *bank, *tab, *fx);
         let (px, w, h) = truce_core::screenshot::render_pixels_for_at_scale::<Plugin>(&mut plugin, 2.0);
         truce_core::screenshot::save_png(std::path::Path::new(&format!("{out}/{name}.png")), &px, w, h);
         eprintln!("{name}: {w}x{h}");

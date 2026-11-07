@@ -1,6 +1,6 @@
 <div align="center">
 
-# Zyn02
+# Zynabre
 
 **ZynAddSubFX, rebuilt in Rust.**
 
@@ -9,9 +9,9 @@
 An Audio Unit, VST3 and CLAP instrument by **Jardim Sonoro**, written in Rust with
 [truce](https://github.com/truce-audio/truce).
 
-[![Build](https://github.com/nagualcode/zyn02/actions/workflows/build.yml/badge.svg)](https://github.com/nagualcode/zyn02/actions/workflows/build.yml)
+[![Build](https://github.com/nagualcode/zynabre/actions/workflows/build.yml/badge.svg)](https://github.com/nagualcode/zynabre/actions/workflows/build.yml)
 
-![Zyn02](screenshots/main.png)
+![Zynabre](screenshots/main.png)
 
 </div>
 
@@ -28,7 +28,7 @@ harmonic over a band and renders the whole thing with one enormous inverse
 FFT into a seamless, breathing wavetable. Two decades of musicians have
 made thousands of patches for it.
 
-Zyn02 (Zyn + 2002) is a port of that engine, module by module, from the
+Zynabre (Zyn + abre, Portuguese for "opens") is a port of that engine, module by module, from the
 C++ sources (version 3.0.x) into Rust, wrapped as a modern plugin with a
 new editor. It is not "Zyn-inspired": it loads the original patch files
 and plays them the way ZynAddSubFX does.
@@ -36,7 +36,7 @@ and plays them the way ZynAddSubFX does.
 ## Same sound as the original — measured
 
 The original was compiled locally and driven by a small harness through the
-same note sequence as Zyn02, sample for sample (`tools/` in the history of
+same note sequence as Zynabre, sample for sample (`tools/` in the history of
 this repo; see *How it was checked* below).
 
 | What | Result |
@@ -45,7 +45,7 @@ this repo; see *How it was checked* below).
 | The rest | statistically identical; they diverge only where the original is itself random or chaotic (see below) |
 | Every effect (all 10) × every factory preset × insertion/system | **bit-identical** (zero error), except 3 Distortion presets and 4 DynFilter presets at −75 to −110 dB |
 | PADsynth wavetables | magnitude spectra **identical**; phases are random by design |
-| Save → reload in Zyn02 | lossless on every tested patch (`cargo test`) |
+| Save → reload in Zynabre | lossless on every tested patch (`cargo test`) |
 
 Why the remaining instruments are not bit-identical:
 
@@ -146,7 +146,7 @@ to reset a bar.
 
 ## Community presets
 
-On top of the 1318 ZynAddSubFX instruments, Zyn02 bundles **199 community
+On top of the 1318 ZynAddSubFX instruments, Zynabre bundles **199 community
 patches**, mostly well-known classic sounds, in six banks listed first in
 the browser:
 
@@ -162,7 +162,7 @@ the browser:
 The four *Classic* banks come from Yingchun Soul and the
 [NeoSoundFonts](https://github.com/NeoSoundFonts) project (CC0). The two
 Yoshimi banks come from [Yoshimi](https://github.com/Yoshimi/yoshimi).
-Every patch was rendered with Zyn02 and with the original ZynAddSubFX
+Every patch was rendered with Zynabre and with the original ZynAddSubFX
 and kept only when both renders have the same level; about half are
 bit-for-bit identical. Full credits: [`banks-community/CREDITS.md`](banks-community/CREDITS.md).
 
@@ -193,28 +193,28 @@ channel, as in Zyn.
 ## Install
 
 Download the zip for your system from [Releases](../../releases) and unzip
-it. Every zip has the plug-ins and `zyn02-standalone`, a desktop app that
+it. Every zip has the plug-ins and `zynabre-standalone`, a desktop app that
 needs no DAW. Builds of every commit are on the
 [Actions](../../actions/workflows/build.yml) page (sign in to GitHub to
 download them).
 
 **macOS (Apple Silicon)**: AU, VST3, CLAP.
 
-1. Copy the bundles to `~/Library/Audio/Plug-Ins/`: `Zyn02.component` into
-   `Components/`, `Zyn02.vst3` into `VST3/`, `Zyn02.clap` into `CLAP/`.
+1. Copy the bundles to `~/Library/Audio/Plug-Ins/`: `Zynabre.component` into
+   `Components/`, `Zynabre.vst3` into `VST3/`, `Zynabre.clap` into `CLAP/`.
 2. The bundles are ad-hoc signed, not notarized. Clear the quarantine once:
    ```sh
-   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Zyn02.component
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Zynabre.component
    ```
-3. Rescan plug-ins in your DAW: *Jardim Sonoro › Zyn02*.
+3. Rescan plug-ins in your DAW: *Jardim Sonoro › Zynabre*.
 
-**Windows (x64)**: VST3, CLAP. Copy `Zyn02.vst3` to
-`C:\Program Files\Common Files\VST3\` and `Zyn02.clap` to
+**Windows (x64)**: VST3, CLAP. Copy `Zynabre.vst3` to
+`C:\Program Files\Common Files\VST3\` and `Zynabre.clap` to
 `C:\Program Files\Common Files\CLAP\`. The build is not code-signed, so
 SmartScreen may warn about the standalone app.
 
-**Linux (x64)**: VST3, CLAP. Copy `Zyn02.vst3` to `~/.vst3/` and
-`Zyn02.clap` to `~/.clap/`.
+**Linux (x64)**: VST3, CLAP. Copy `Zynabre.vst3` to `~/.vst3/` and
+`Zynabre.clap` to `~/.clap/`.
 
 ## Build from source
 
@@ -288,7 +288,7 @@ Editor
 
 ZynAddSubFX: Nasca Octavian Paul, Mark McCurry and contributors (GPL-2.0 or
 later); the bundled banks keep their authors' licences (see the files in
-`banks/`). Framework: truce (MIT/Apache-2.0). Zyn02 is an independent port
+`banks/`). Framework: truce (MIT/Apache-2.0). Zynabre is an independent port
 and is not affiliated with the ZynAddSubFX project.
 
 ## License

@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use zyn02::synth::master::{Engine, Event, Patch};
+use zynabre::synth::master::{Engine, Event, Patch};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -33,7 +33,7 @@ fn main() {
     }
     let mut eng = Engine::new(sr, 256, Arc::new(patch));
     let raw = std::env::var("RAW_PART").is_ok();
-    zyn02::synth::util::sprng(0x1234);
+    zynabre::synth::util::sprng(0x1234);
     if raw {
         eng.debug_part = Some((Vec::new(), Vec::new()));
     }

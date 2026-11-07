@@ -1,4 +1,4 @@
-//! Zyn02 — ZynAddSubFX rebuilt in Rust with truce.
+//! Zynabre — ZynAddSubFX rebuilt in Rust with truce.
 //!
 //! Plugin layer: host parameters, MIDI and state. The sound engine is in
 //! [`synth`] (a module-by-module port of ZynAddSubFX), the shared patch

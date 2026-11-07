@@ -2,9 +2,9 @@
 //! check the two renders match (the format round-trips losslessly).
 
 use std::sync::Arc;
-use zyn02::state::banks;
-use zyn02::synth::master::{Engine, Event, Patch};
-use zyn02::synth::util::sprng;
+use zynabre::state::banks;
+use zynabre::synth::master::{Engine, Event, Patch};
+use zynabre::synth::util::sprng;
 
 fn render(p: Patch) -> Vec<f32> {
     let mut p = p;

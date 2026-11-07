@@ -1,11 +1,11 @@
 # Community banks
 
-Instruments made by the ZynAddSubFX / Yoshimi community, bundled with Zyn02
+Instruments made by the ZynAddSubFX / Yoshimi community, bundled with Zynabre
 and shown first in the browser under **COMMUNITY**. The patches are
 unchanged apart from their display name; NeoSoundFonts patches also have
 their (empty) author and comment fields filled in with the credit below.
 
-Every patch was rendered with Zyn02 and with the original ZynAddSubFX 3.0.x
+Every patch was rendered with Zynabre and with the original ZynAddSubFX 3.0.x
 (same notes, same random seed). A patch was only included when the two
 renders have the same level (within 1 dB RMS). About half of them are bit-for-bit
 identical; the rest use Zyn's own randomness (PADsynth phases, random pan,
